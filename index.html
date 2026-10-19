@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#05050a">
+<title>Enikey Journey</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Oswald:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="menu">
+<canvas id="game" aria-label="Игровое поле"></canvas>
+<div class="post" aria-hidden="true"><div class="scan"></div><div class="vig"></div><div id="hurt" class="hurt"></div><div id="burnfx" class="burnfx"></div><div id="lowhp" class="lowhp"></div></div>
+
+<!-- ============================== HUD -->
+<div id="hud" class="hud" hidden>
+  <section class="hud-player">
+    <div class="portrait"><canvas id="portrait"></canvas><span class="lvl" id="lvl">1</span></div>
+    <div class="pinfo">
+      <div class="pname">Эникей <span id="rank">Эникей · место 503</span></div>
+      <div class="bar hp" title="Здоровье"><i id="hpFill"></i><span id="hpText"></span></div>
+      <div class="bar en" title="Энергия: тратится на таски и поиск уязвимостей"><i id="enFill"></i><span id="enText"></span></div>
+      <div class="bar bo" title="Выгорание: выше 50% падает урон, 100% — конец"><i id="boFill"></i><span id="boText"></span></div>
+      <div class="xp" title="Опыт"><i id="xpFill"></i></div>
+    </div>
+  </section>
+
+  <section class="tracker">
+    <div class="tr-head"><span>ТРЕКЕР</span><b id="dayLabel">День 1</b></div>
+    <div class="obj main">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h18l-1.5-10-4.5 4-3-7-3 7-4.5-4z" fill="#f2b632"/><rect x="3" y="19" width="18" height="2" fill="#f2b632"/></svg>
+      <div><small>Основная цель:</small><span id="objMain">Добраться до CEO</span></div>
+    </div>
+    <ol id="tickets" class="tickets"></ol>
+    <div class="tr-hint"><kbd>Tab</kbd> следующая таска · <kbd>E</kbd> работать · день до 18:00</div>
+  </section>
+
+  <section class="floorinfo">
+    <div class="floorname"><span id="floorName">Этаж 1</span></div>
+    <div class="minimap"><canvas id="minimap"></canvas></div>
+    <div class="dept" id="dept">NAXRAMUS LABS</div>
+  </section>
+
+  <section class="abilities">
+    <div class="slot" data-slot="lmb"><kbd>ЛКМ</kbd><div class="icon"><svg viewBox="0 0 24 24"><path d="M4 6l6 6-6 6" fill="none" stroke="#4fe9ff" stroke-width="2.5"/><path d="M12 18h8" stroke="#4fe9ff" stroke-width="2.5"/></svg></div><small>Атака</small></div>
+    <div class="slot" data-slot="def"><kbd>SHIFT</kbd><div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z" fill="none" stroke="#9fd8ff" stroke-width="2"/><path d="M9 12h6M12 9v6" stroke="#9fd8ff" stroke-width="2"/></svg></div><small>Блок · Reject</small></div>
+    <div class="slot" data-slot="dash"><kbd>SPACE</kbd><div class="icon"><svg viewBox="0 0 24 24"><path d="M13 3L5 14h6l-1 7 8-11h-6z" fill="#ffb03a"/></svg><div class="cd"></div></div><small>Рывок</small></div>
+    <div class="slot" data-slot="q"><kbd>Q</kbd><div class="icon"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="#ff2d55" stroke-width="2"/><path d="M14.5 14.5L20 20" stroke="#ff2d55" stroke-width="2.6"/><circle cx="10" cy="10" r="1.6" fill="#fff"/></svg><div class="cd"></div><b class="cost" id="qCost">⚡3</b><b class="chance" id="vulnChance">25%</b></div><small>Уязвимость</small></div>
+    <div class="sep"></div>
+    <div class="items" id="itemSlots"></div>
+  </section>
+
+  <section class="wallet">
+    <div class="coin" title="Золото"><svg viewBox="0 0 24 24"><path d="M3 15l9-4 9 4-9 4z" fill="#b8841f"/><path d="M3 12l9-4 9 4-9 4z" fill="#f2b632"/><path d="M3 9l9-4 9 4-9 4z" fill="#ffd76a"/></svg><span id="gold">0</span></div>
+    <div class="docs" title="Пропуска к боссу"><svg viewBox="0 0 24 24"><path d="M12 2l7 8-7 12-7-12z" fill="#9b5cff"/><path d="M12 2l7 8h-7z" fill="#c9a2ff"/></svg><span id="passes">0</span></div>
+  </section>
+
+  <section id="bossbar" class="bossbar" hidden>
+    <div class="bossname"><span id="bossName"></span><em id="bossPhase"></em></div>
+    <div class="bbar"><i id="bossFill"></i><span id="bossHp"></span></div>
+  </section>
+
+  <aside id="lootCard" class="loot"><div class="lootico" id="lootIco"></div><div><em id="lootGrade"></em><strong id="lootName"></strong><p id="lootText"></p></div></aside>
+
+  <div id="prompt" class="prompt"><kbd>E</kbd><span id="promptText"></span></div>
+  <div id="speech" class="speech"><b id="speechName"></b><span id="speechText"></span></div>
+  <div id="banner" class="banner"><h2 id="bannerTitle"></h2><p id="bannerSub"></p></div>
+  <div id="alert" class="alert"></div>
+  <div id="toast" class="toast"></div>
+  <button id="soundBtn" class="soundbtn" title="Звук (M)">♪</button>
+</div>
+
+<!-- ============================== screens -->
+<section id="title" class="screen title">
+  <div class="title-art"></div>
+  <div class="title-grid">
+    <div class="logo-block">
+      <div class="badge-line"><span class="pill">НАКСРАМУС ЛАБС</span><span>Прототип · сборка 0.3</span></div>
+      <h1 class="logo"><span class="l1">ENIKEY</span><span class="l2">JOURNEY</span></h1>
+      <p class="tagline">WORK <i>•</i> SURVIVE <i>•</i> CLIMB</p>
+      <p class="lead">Сезонный эникей устраивается на самое дно мегакорпорации. Тикеты, баги, выгорание, элитные сеньоры и боссы-менеджеры — этаж за этажом, до тронного зала.<br>Но трон нельзя разрушить. Его можно только занять.</p>
+      <p class="prevceo" id="prevCeo" hidden></p>
+    </div>
+    <div class="mail">
+      <div class="mail-head"><span class="mail-time">04:04</span><div><strong>Отправитель не найден</strong><p>Тема: Кандидат Эникей</p></div></div>
+      <p class="mail-body" id="mailLine">«Кандидат Эникей. Выбор сделан. Отказ не предусмотрен контрактом, который вы ещё не подписывали, но уже подписали.»</p>
+      <ol class="hr-options">
+        <li><button data-act="start"><kbd>1</kbd>Открыть дверь</button></li>
+        <li><button data-act="ignore"><kbd>2</kbd>Не открывать</button></li>
+        <li><button data-act="reply"><kbd>3</kbd>Ответить на письмо</button></li>
+        <li><button data-act="skip"><kbd>4</kbd>Сразу на работу (без пролога)</button></li>
+      </ol>
+      <div class="controls-mini">
+        <span><kbd>WASD</kbd> движение</span><span><kbd>ЛКМ</kbd> атака</span><span><kbd>SHIFT</kbd> защита</span><span><kbd>SPACE</kbd> рывок</span>
+        <span><kbd>Q</kbd> уязвимость</span><span><kbd>E</kbd> работать</span><span><kbd>1–5</kbd> предметы</span><span><kbd>I</kbd> инвентарь</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="scene" class="screen scene" hidden>
+  <div class="sc-inner">
+    <span class="sc-eyebrow" id="sceneEyebrow">СЦЕНА</span>
+    <h2 id="sceneTitle"></h2>
+    <div class="sc-text" id="sceneText"></div>
+    <div class="sc-hint"><kbd>Enter</kbd> / <kbd>Space</kbd> — дальше</div>
+  </div>
+</section>
+
+<section id="floorCard" class="screen floorcard" hidden>
+  <div class="fc-inner">
+    <span class="fc-eyebrow" id="fcEyebrow">ЛИФТ</span>
+    <h2 id="fcTitle"></h2>
+    <p id="fcSub"></p>
+    <div class="fc-bar"><i></i></div>
+  </div>
+</section>
+
+<section id="camp" class="screen camp" hidden>
+  <div class="camp-inner">
+    <span class="eyebrow">ЛАГЕРЬ</span>
+    <h2 id="campTitle">Вечер</h2>
+    <p class="camp-quote" id="campQuote"></p>
+    <div class="camp-stats" id="campStats"></div>
+    <div class="camp-grid">
+      <div class="camp-col">
+        <h3>Подготовка</h3>
+        <button class="cbtn" id="courseBtn"><b>Онлайн-курсы</b><span>+1 к навыку · <em id="coursePrice">40</em> ◆</span></button>
+        <div id="shopItems"></div>
+      </div>
+      <div class="camp-col">
+        <h3>Закончить день</h3>
+        <button class="cbtn big" id="restBtn"><b>Отдохнуть <kbd>1</kbd></b><span>Энергия — полностью · выгорание −15 · здоровье +30%</span></button>
+        <button class="cbtn big" id="vacBtn"><b>Уйти в отпуск <kbd>2</kbd></b><span>50 ◆ · энергия и здоровье — полностью · выгорание −50</span></button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="buffer" class="screen buffer" hidden>
+  <div class="panel center">
+    <span class="eyebrow red">БУФЕР</span>
+    <h2>Ты не умер. Ты в очереди.</h2>
+    <p>Маленькое холодное помещение. Одна лампа мигает ровным, мерным ритмом. На стене — пустой бейджик.<br><i>— Здесь ты не выполнишь ничего, — голос Браина отовсюду и ниоткуда. — Если бы ты не был помечен, ты бы уже был в темноте.</i></p>
+    <p class="muted">Пакеты из очереди не выбиваются. Пакеты отправляются. Выбери, чем заплатить за самовыпуск — это сработает только один раз за забег.</p>
+    <div class="row" id="bufferOpts"></div>
+  </div>
+</section>
+
+<section id="inventory" class="screen inv" hidden>
+  <div class="panel">
+    <span class="eyebrow">ИНВЕНТАРЬ · <kbd>I</kbd> закрыть</span>
+    <h2>Эникей, место 503</h2>
+    <div class="inv-stats" id="invStats"></div>
+    <div class="inv-list" id="invList"></div>
+  </div>
+</section>
+
+<section id="pause" class="screen pause" hidden>
+  <div class="panel">
+    <span class="eyebrow">ПЕРЕРЫВ</span>
+    <h2>Пауза</h2>
+    <div class="ctl-grid">
+      <span>Движение</span><kbd>W A S D</kbd>
+      <span>Атака</span><kbd>ЛКМ</kbd>
+      <span>Нажать вовремя — Reject: пуля летит обратно. Держать — блок −50%</span><kbd>SHIFT / ПКМ</kbd>
+      <span>Рывок, неуязвимость</span><kbd>SPACE</kbd>
+      <span>Найти уязвимость: ×2 урон по цели (⚡3)</span><kbd>Q</kbd>
+      <span>Работать над таской · обработать духа · перехватить дрон</span><kbd>E</kbd>
+      <span>Следующая таска в трекере</span><kbd>TAB</kbd>
+      <span>Активные предметы</span><kbd>1 – 5</kbd>
+      <span>Инвентарь · звук</span><kbd>I · M</kbd>
+    </div>
+    <div class="row"><button class="btn primary" id="resumeBtn">Продолжить</button><button class="btn" id="quitBtn">Уволиться</button></div>
+  </div>
+</section>
+
+<section id="over" class="screen death" hidden>
+  <div class="panel center">
+    <span class="eyebrow red">ЗАПРОС К СИСТЕМЕ · ПОИСК СОТРУДНИКА</span>
+    <h2 class="fired" id="overTitle">СОТРУДНИК НЕ НАЙДЕН</h2>
+    <p id="overReason"></p>
+    <div class="stats" id="overStats"></div>
+    <div class="row"><button class="btn primary" id="retryBtn">Новый контракт <kbd>Enter</kbd></button><button class="btn" id="menuBtn">В меню</button></div>
+  </div>
+</section>
+
+<section id="ending" class="screen victory" hidden>
+  <div class="panel center wide">
+    <span class="eyebrow green">ЗАБЕГ ЗАВЕРШЁН</span>
+    <h2>Ты — новый CEO</h2>
+    <div class="ceo-chain" id="ceoChain"></div>
+    <h3 class="ceo">CEO ВСЕГДА ВОЗВРАЩАЕТСЯ</h3>
+    <p class="muted" id="endingText">В следующем забеге наверху будет ждать твой Эникей — с этим уровнем, навыком и лутом.</p>
+    <div class="stats" id="endStats"></div>
+    <div class="row"><button class="btn primary" id="ngBtn">Новый забег <kbd>Enter</kbd></button><button class="btn" id="endMenuBtn">В меню</button></div>
+  </div>
+</section>
+
+<section id="bossCard" class="bosscard" hidden>
+  <div class="bc-line"></div>
+  <h2 id="bcName"></h2>
+  <h3 id="bcTitle"></h3>
+  <p id="bcQuote"></p>
+</section>
+
+<div id="touchNote" class="touchnote" hidden>Прототип рассчитан на клавиатуру и мышь.</div>
+
+<script src="src/core.js"></script>
+<script src="src/audio.js"></script>
+<script src="src/data.js"></script>
+<script src="src/sprites.js"></script>
+<script src="src/assets.js"></script>
+<script src="src/level.js"></script>
+<script src="src/entities.js"></script>
+<script src="src/boss.js"></script>
+<script src="src/render.js"></script>
+<script src="src/ui.js"></script>
+<script src="src/game.js"></script>
+</body>
+</html>
