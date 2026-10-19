@@ -594,11 +594,11 @@
       if (R && n >= 5 && rng.chance(0.85)) {
         signLen = Math.min(n - 2, R.type === 'boss' ? 5 : rng.int(3, 4));
         signFrom = Math.floor((n - signLen) / 2);
-        const sign = ['boss', 'start', 'throne', 'lobby', 'lift'].includes(R.type) ? ['NAXRAMUS'] : rng.pick(theme.signs);
+        const sign = ['boss', 'start', 'throne', 'lobby', 'lift'].includes(R.type) ? ['MONOLITH'] : rng.pick(theme.signs);
         const uX = signFrom * 16, uW = signLen * 16;
         for (const ctx of [wc, gc]) {
           faceCtx(ctx, run.kind, ox, oy);
-          if (sign[0] === 'NAXRAMUS') {
+          if (sign[0] === 'MONOLITH') {
             if (ctx === wc) {
               ctx.fillStyle = '#4a0b18'; ctx.fillRect(uX + 2, 5, uW - 4, 38);
               ctx.fillStyle = '#360712';
@@ -607,11 +607,12 @@
             }
             ctx.fillStyle = ctx === wc ? '#ff3355' : 'rgba(255,40,80,0.8)';
             const cxm = uX + uW / 2;
-            // crown
-            ctx.fillRect(cxm - 7, 16, 14, 3);
-            for (const [dx, hh] of [[-7, 5], [-3, 4], [0, 7], [3, 4], [6, 5]]) ctx.fillRect(cxm + dx, 16 - hh, 1 + (dx === 0 ? 1 : 0), hh);
+            // logo: a black monolith slab with a glowing slit
+            ctx.fillRect(cxm - 4, 6, 8, 14);
+            if (ctx === wc) { ctx.fillStyle = '#1a0408'; ctx.fillRect(cxm - 3, 7, 6, 12); ctx.fillStyle = '#ff3355'; }
+            ctx.fillRect(cxm, 8, 1, 10);
             ctx.font = 'bold 9px "Oswald", "Arial Narrow", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText('NAXRAMUS', cxm, 28); ctx.font = 'bold 6px "Oswald", sans-serif'; ctx.fillText('L A B S', cxm, 37);
+            ctx.fillText('MONOLITH', cxm, 28); ctx.font = 'bold 6px "Oswald", sans-serif'; ctx.fillText('C O R P', cxm, 37);
           } else if (ctx === wc) {
             ctx.fillStyle = 'rgba(120,125,150,0.20)';
             ctx.font = 'bold 11px "Oswald", "Arial Narrow", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -620,7 +621,7 @@
           }
           ctx.setTransform(1, 0, 0, 1, 0, 0);
         }
-        if (sign[0] === 'NAXRAMUS') {
+        if (sign[0] === 'MONOLITH') {
           const mid = run.tiles[signFrom + (signLen >> 1)];
           pools.push(run.kind === 'Y' ? [mid.x + 0.5, mid.y + 2, theme.accent, 3.2, 0.32] : [mid.x + 2, mid.y + 0.5, theme.accent, 3.2, 0.32]);
         }

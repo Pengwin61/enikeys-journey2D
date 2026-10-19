@@ -290,28 +290,59 @@ EJ.render = (() => {
   }
 
   // ---------------------------------------------------------------- painted assets (assets/gen, optional)
-  const HERO_H = 38, ART_SCALE = 32 / 256;
+  const HERO_H = 34, ART_SCALE = 32 / 256;
+  // tall art is capped so it stays in proportion with the 50 px walls
+  const ART_MAX_H = { pillar: 66, rack: 54, cabinet: 32, cooler: 28, vending: 50, kiosk: 26, ups: 26, router: 22 };
   const propArt = p => EJ.assets.forProp(p);
-  function drawArt(a, cx, bottom, height, flip, alpha, flash) {
-    const k = height ? height / a.h : ART_SCALE, w = a.w * k, h = a.h * k;
-    sc.save();
-    sc.imageSmoothingEnabled = true; sc.globalAlpha = alpha;
-    if (flip) { sc.translate(cx * 2, 0); sc.scale(-1, 1); }
-    sc.drawImage(a.img, a.x, a.y, a.w, a.h, cx - w / 2, bottom - h, w, h);
-    if (flash) { sc.globalCompositeOperation = 'lighter'; sc.globalAlpha = 0.6 * alpha; sc.drawImage(a.img, a.x, a.y, a.w, a.h, cx - w / 2, bottom - h, w, h); }
-    sc.restore();
+  // painted art is pre-scaled once per on-screen size and cached, then blitted 1:1 in device pixels
+  const artCache = new Map();
+  function scaledArt(a, h, flip) {
+    const H2 = Math.max(1, Math.round(h * RES)), key = a;
+    let per = artCache.get(key);
+    if (!per) { per = new Map(); artCache.set(key, per); }
+    const k2 = H2 + (flip ? 'f' : '');
+    let c = per.get(k2);
+    if (!c) {
+      const W2 = Math.max(1, Math.round(a.w * H2 / a.h));
+      c = EJ.canvas(W2, H2);
+      const g = c.getContext('2d');
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+      if (flip) { g.translate(W2, 0); g.scale(-1, 1); }
+      g.drawImage(a.img, a.x, a.y, a.w, a.h, 0, 0, W2, H2);
+      if (per.size > 24) per.clear();
+      per.set(k2, c);
+    }
+    return c;
   }
+  function drawArt(a, cx, bottom, height, flip, alpha, flash) {
+    const h = height || a.h * ART_SCALE;
+    const c = scaledArt(a, h, flip);
+    const dx = Math.round(cx * RES - c.width / 2), dy = Math.round(bottom * RES - c.height);
+    sc.setTransform(1, 0, 0, 1, 0, 0);
+    sc.globalAlpha = alpha;
+    sc.drawImage(c, dx, dy);
+    if (flash) { sc.globalCompositeOperation = 'lighter'; sc.globalAlpha = 0.6 * alpha; sc.drawImage(c, dx, dy); sc.globalCompositeOperation = 'source-over'; }
+    sc.globalAlpha = 1;
+    sc.setTransform(RES, 0, 0, RES, 0, 0);
+  }
+  let floorTileC = null, floorTileRes = 0;
   function drawAssetFloor(L) {
     const tile = EJ.assets.get('floor_tile');
     if (!tile || !L.decalCanvas) return;
-    sc.imageSmoothingEnabled = true;
+    if (floorTileRes !== RES) {
+      floorTileRes = RES;
+      floorTileC = EJ.canvas(Math.ceil(32.8 * RES), Math.ceil(16.4 * RES));
+      const g = floorTileC.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+      g.drawImage(tile.img, 0, 0, floorTileC.width, floorTileC.height);
+    }
+    sc.setTransform(1, 0, 0, 1, 0, 0);
     for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) {
       if (L.tiles[L.idx(x, y)] !== 1) continue;
       const X = sx(x, y), Y = sy(x, y);
       if (X < -20 || X > W + 20 || Y < -20 || Y > H + 20) continue;
-      sc.drawImage(tile.img, tile.x, tile.y, tile.w, tile.h, X - 16.4, Y - 0.2, 32.8, 16.4);
+      sc.drawImage(floorTileC, Math.round((X - 16.4) * RES), Math.round((Y - 0.2) * RES));
     }
-    sc.imageSmoothingEnabled = false;
+    sc.setTransform(RES, 0, 0, RES, 0, 0);
     blitRegion(sc, L.decalCanvas, L.FOX, L.FOY);
     sc.globalCompositeOperation = 'lighter';
     blitRegion(sc, L.poolCanvas, L.FOX, L.FOY);
@@ -388,13 +419,15 @@ EJ.render = (() => {
     if (art) {
       // painted asset: bottom of the art sits on the footprint's lowest corner, scaled 1 tile = 256 px
       const bx = sx(p.x + p.w / 2, p.y + p.d / 2), by = sy(p.x + p.w, p.y + p.d) + 1;
-      drawArt(art, bx, by, null, false, p.fade ?? 1, false);
+      // fit the art's width to the footprint's iso width (+12% for overhangs)
+      const fitH = art.h * ((p.w + p.d) * 16 * 1.12) / art.w;
+      drawArt(art, bx, by, Math.min(fitH, ART_MAX_H[p.kind] || 1e9), false, p.fade ?? 1, false);
     } else {
       sc.globalAlpha = p.fade ?? 1;
       sc.drawImage(p.img, x, y);
       sc.globalAlpha = 1;
     }
-    if (p.leds) for (const [lx, ly, col, ph, rate] of p.leds) if (Math.sin(time * rate + ph) > -0.2) { sc.fillStyle = col; sc.fillRect(x + lx, y + ly, 1, 1); gc.fillStyle = col; gc.fillRect(x + lx, y + ly, 2, 1); }
+    if (p.leds && !art) for (const [lx, ly, col, ph, rate] of p.leds) if (Math.sin(time * rate + ph) > -0.2) { sc.fillStyle = col; sc.fillRect(x + lx, y + ly, 1, 1); gc.fillStyle = col; gc.fillRect(x + lx, y + ly, 2, 1); }
     if (p.camp === 'shop' && G.shop) G.shop.forEach((it, i) => {
       if (it.sold) return;
       const col = EJ.GRADES[it.grade].color;
@@ -498,6 +531,14 @@ EJ.render = (() => {
     const flip = P.x - P.y < n.x - n.y;
     let alpha = 1;
     if (n.kind === 'gregor') alpha = 0.72 + Math.sin(time * 7) * 0.08 + (Math.random() < 0.02 ? -0.4 : 0);
+    // painted Gregor: faces the hero, talks while his line is up, and now and then dissolves for a moment
+    const faceFront = P.x + P.y >= n.x + n.y;
+    if (n.kind === 'gregor') {
+      const glitch = (time + n.x * 3) % 9 < 0.7;
+      const pose = !faceFront ? 'gregor_back' : n.say > 0 ? 'gregor_talk' : glitch ? 'gregor_fade' : 'gregor_front';
+      const art = EJ.assets.get(pose) || EJ.assets.get('gregor_front');
+      if (art) { drawArt(art, x, y, HERO_H, faceFront ? P.x - P.y > n.x - n.y : false, Math.min(1, alpha + 0.15), false); pushLight(n.x, n.y, 'rgba(90,160,255,0.35)', 1.5); return; }
+    }
     const spr = S()[n.kind][0];
     sprite(spr, x, y + (n.kind === 'paul' ? Math.round(Math.sin(time * 2) - 1) : 0), flip, { alpha });
     if (n.kind === 'paul') pushLight(n.x, n.y, 'rgba(255,138,42,0.3)', 1.3);

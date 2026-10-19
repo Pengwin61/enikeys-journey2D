@@ -1,7 +1,14 @@
 /* Enikey Journey — optional painted assets (assets/gen/*.png). Missing files fall back to procedural art. */
 'use strict';
 EJ.assets = (() => {
-  const NAMES = ['enikey_front', 'enikey_back', 'desk_pc', 'desk_503', 'plant', 'sofa', 'coffee_machine', 'floor_tile'];
+  // assets/gen/<folder>/<name>.png — see assets/gen/README.md
+  const MANIFEST = {
+    characters: ['enikey_front', 'enikey_back', 'gregor_front', 'gregor_back', 'gregor_talk', 'gregor_fade'],
+    props: ['desk_pc', 'desk_503', 'plant', 'sofa', 'coffee_machine', 'server_rack', 'pillar_neon', 'filing_cabinet', 'water_cooler',
+      'printer', 'router', 'ups', 'meeting_table', 'crate', 'kiosk_hr', 'kiosk_edu', 'it_shelf'],
+    tiles: ['floor_tile'],
+  };
+  const NAMES = Object.entries(MANIFEST).flatMap(([dir, names]) => names.map(n => [n, `${dir}/${n}`]));
   const map = new Map();
   const off = /[?&]noart\b/.test(location.search);
 
@@ -26,14 +33,19 @@ EJ.assets = (() => {
 
   function load() {
     if (off) return Promise.resolve();
-    return Promise.all(NAMES.map(name => new Promise(res => {
+    return Promise.all(NAMES.map(([name, file]) => new Promise(res => {
       const img = new Image();
       img.onload = () => { map.set(name, prepare(img, name)); res(); };
       img.onerror = () => res();
-      img.src = `assets/gen/${name}.png`;
+      img.src = `assets/gen/${file}.png`;
     })));
   }
-  const PROP_ART = { desk: p => (p.laptop ? 'desk_503' : 'desk_pc'), plant: () => 'plant', sofa: () => 'sofa', vending: () => 'coffee_machine' };
+  const PROP_ART = {
+    desk: p => (p.laptop ? 'desk_503' : 'desk_pc'), plant: () => 'plant', sofa: () => 'sofa', vending: () => 'coffee_machine',
+    rack: () => 'server_rack', pillar: () => 'pillar_neon', cabinet: () => 'filing_cabinet', cooler: () => 'water_cooler',
+    printer: () => 'printer', router: () => 'router', ups: () => 'ups', mtable: () => 'meeting_table', crate: () => 'crate',
+    kiosk: p => (p.camp === 'hr' ? 'kiosk_hr' : 'kiosk_edu'), itshelf: () => 'it_shelf',
+  };
   const forProp = p => { const f = PROP_ART[p.kind]; return f ? map.get(f(p)) || null : null; };
   return { load, forProp, get: name => map.get(name) || null, has: name => map.has(name), names: () => [...map.keys()] };
 })();

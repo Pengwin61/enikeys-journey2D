@@ -62,7 +62,7 @@
     hud.floor(G);
 
     // elevator card
-    $('fcEyebrow').textContent = i === 0 ? 'НАКСРАМУС ЛАБС' : 'ЛИФТ · ВВЕРХ';
+    $('fcEyebrow').textContent = i === 0 ? 'MONOLITH CORP' : 'ЛИФТ · ВВЕРХ';
     $('fcTitle').textContent = `${G.floor.label} — ${G.floor.name}`;
     $('fcSub').textContent = i === 0 ? 'Ряд 7. Место 503. Оборудование: на месте. Ожидает оператора.' : i === 1 ? 'Разработка. Планёрка, с которой никто не уходит.' : 'Тронный зал. Компания всегда должна иметь CEO.';
     document.documentElement.style.setProperty('--fc', EJ.rgba(G.floor.accent, 0.6));
@@ -126,25 +126,10 @@
     EJ.rand.shuffle(rooms);
     for (const R of rooms.slice(0, Math.min(rooms.length, 1 + Math.min(2, Math.floor(G.day / 2))))) { R.incident = true; R.cleared = false; }
 
-    // daily pool: 3 tickets; elite from day 2; boss when passes allow (quest_generator.go)
-    const used = new Set();
-    const devices = L.props.filter(p => p.device && !p.seat);
-    const pickTarget = dev => {
-      const opts = devices.filter(p => p.device === dev && !used.has(p));
-      const far = opts.filter(p => L.rooms[p.room].type !== 'start');
-      const pool = far.length ? far : opts;
-      if (!pool.length) return null;
-      const p = pool[Math.floor(rand() * pool.length)];
-      used.add(p); return p;
-    };
-    const quests = EJ.rand.shuffle(EJ.QUESTS.slice());
+    // morning pool: 3 tickets; more arrive during the day; elite from day 2; boss when passes allow (quest_generator.go)
     G.tickets = [];
-    for (const q of quests) {
-      if (G.tickets.length >= 3) break;
-      const target = pickTarget(q.device);
-      if (!target) continue;
-      G.tickets.push({ id: nax(), kind: 'normal', quest: q, title: q.name, text: q.text, target, state: 'open', progress: 0 });
-    }
+    for (let i = 0; i < 3; i++) addNormalTicket();
+    G.nextTicketAt = 9 * 60 + 70 + rand() * 30;
     const floorDay = G.day - G.floorStartDay + 1;
     const eliteChance = Math.min(100, (floorDay >= 2 ? 100 : 0));
     if (rand() * 100 < eliteChance) addEliteTicket(0);
@@ -154,6 +139,27 @@
     hud.banner(`ДЕНЬ ${G.day}`, first && G.day === 1 ? 'Трекер: 3 новые таски. Неоновая нить ведёт к выбранной.' : `${G.floor.name} · новые таски в трекере`, G.floor.accent, 2.4);
     if (first && G.day === 1 && G.floorIdx === 0) hud.toast('WASD — движение · ЛКМ — атака · E — работать над таской · Tab — сменить таску', 6);
     EJ.audio.setIntensity(0.15);
+  }
+
+  // one ticket from the canon pool, bound to a free device (not one already in the tracker)
+  function addNormalTicket() {
+    const L = G.L;
+    const busy = new Set(G.tickets.filter(t => t.state !== 'done').map(t => t.target));
+    const openNames = new Set(G.tickets.filter(t => t.state !== 'done').map(t => t.title));
+    for (const q of EJ.rand.shuffle(EJ.QUESTS.slice())) {
+      if (openNames.has(q.name)) continue;
+      const opts = L.props.filter(p => p.device === q.device && !p.seat && !busy.has(p));
+      const far = opts.filter(p => L.rooms[p.room].type !== 'start');
+      const pool = far.length ? far : opts;
+      if (!pool.length) continue;
+      const t = { id: nax(), kind: 'normal', quest: q, title: q.name, text: q.text, target: pool[Math.floor(rand() * pool.length)], state: 'open', progress: 0 };
+      // keep the tracker short: forget all but the two most recent finished tickets
+      const done = G.tickets.filter(x => x.state === 'done' && x.kind === 'normal');
+      for (const d of done.slice(0, Math.max(0, done.length - 2))) G.tickets.splice(G.tickets.indexOf(d), 1);
+      G.tickets.push(t);
+      return t;
+    }
+    return null;
   }
 
   function addEliteTicket(slot) {
@@ -519,6 +525,9 @@
     ent.addExp(G, q.exp);
     if (q.burnout) ent.addBurnout(G, q.burnout);
     const [fx, fy] = frontOf(t.target);
+    // the work took real office hours
+    const mins = workMinutes(q0);
+    if (G.floor.key !== 'penthouse') { G.clock += mins; EJ.fx.floater(G, P.x, P.y - 0.4, `⏱ +${fmtDur(mins)}`, '#9fd8ff'); }
     EJ.fx.floater(G, fx, fy, `${t.id} · Done`, '#4dff9a', true);
     EJ.fx.ring(G, fx, fy, 1.2, '#4dff9a', 0.4);
     // TryDropItem: drop chance + luck·0.005 (cap 95%), grade by luck
@@ -529,7 +538,7 @@
     sfx('unlock');
     hud.toast(`${t.id} «${t.title}» → Done. ${q.gold ? `+${q.gold} ◆ · ` : ''}+${q.exp} XP${q.burnout ? ` · +${q.burnout} выгорания` : ''}`, 3);
     G.selTicket = G.tickets.find(x => x.state === 'open') || null;
-    if (!G.tickets.some(x => x.state === 'open')) hud.banner('ТРЕКЕР ПУСТ', 'Закрой день на месте 503 — или оставайся на овертайм', '#4dff9a', 2.4);
+    if (!G.tickets.some(x => x.state === 'open')) hud.banner('ТРЕКЕР ПУСТ', G.clock < 18 * 60 ? 'Новые таски скоро прилетят — или закрой день на месте 503' : 'Закрой день на месте 503 — или ищи ночные инциденты', '#4dff9a', 2.6);
   }
 
   function talk(n) {
@@ -601,6 +610,10 @@
 
   // ================================================================ day end (state_camp.go: rest / vacation)
   const ticketDur = q => 1.6 + q.exp * 0.45;
+  // canon energy cost → working time: 30 min … 3 h
+  const workMinutes = q => 30 + q.energy * 30;
+  const fmtDur = m => (m >= 60 ? `${Math.floor(m / 60)}ч${m % 60 ? ' ' + (m % 60) + 'м' : ''}` : `${m}м`);
+  EJ.workMinutes = workMinutes; EJ.fmtDur = fmtDur;
   function endDay(vacation, forced) {
     if (G.state !== 'play') return;
     if (G.enemies.length && !forced) { hud.toast('Нельзя закрыть день посреди инцидента.', 2); sfx('deny'); return; }
@@ -642,6 +655,13 @@
       hud.banner('18:00 · ОВЕРТАЙМ', 'Свет гаснет через одну. Награды ×1.5, выгорание ×2. Закрыть день — место 503', '#ffb03a', 3.5);
       sfx('alarm');
     }
+    if (G.clock >= G.nextTicketAt && G.clock < 18 * 60) {
+      G.nextTicketAt = G.clock + 60 + rand() * 40;
+      if (G.tickets.filter(t => t.kind === 'normal' && t.state === 'open').length < 4) {
+        const t = addNormalTicket();
+        if (t) { hud.toast(`📨 Новая таска ${t.id}: «${t.title}» · ⏱ ${fmtDur(workMinutes(t.quest))}`, 3); sfx('ui'); if (!G.selTicket || G.selTicket.state !== 'open') G.selTicket = t; }
+      }
+    }
     if (G.overtime && (G.nightIncidentT -= dt) <= 0) {
       G.nightIncidentT = 30;
       const rooms = G.L.rooms.filter(r => ['office', 'print', 'meeting', 'server', 'kitchen'].includes(r.type) && r.cleared && !r.active);
@@ -678,7 +698,7 @@
     if (!sc) { cb(); return; }
     scenePrevState = G.state === 'scene' ? scenePrevState : G.state;
     G.state = 'scene'; sceneCb = cb; sceneText = sc.text; sceneShown = 0; sceneT = 0;
-    $('sceneEyebrow').textContent = id === 'ending' ? 'ФИНАЛ' : 'НАКСРАМУС ЛАБС';
+    $('sceneEyebrow').textContent = id === 'ending' ? 'ФИНАЛ' : 'MONOLITH CORP';
     $('sceneTitle').textContent = sc.title;
     $('sceneText').innerHTML = '';
     hud.screen('scene', true);

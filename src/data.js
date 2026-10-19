@@ -77,24 +77,24 @@
   // ---------------------------------------------------------------- floors
   EJ.FLOORS = [
     {
-      key: 'helpdesk', label: 'Этаж 1', name: 'Helpdesk · Ряд 7', dept: 'NAXRAMUS LABS · HELPDESK',
+      key: 'helpdesk', label: 'Этаж 1', name: 'Helpdesk · Ряд 7', dept: 'MONOLITH CORP · HELPDESK',
       accent: '#ff2d55', accent2: '#3fd8ff', floor: 'tile',
       wall: { top: '#0c0d14', l: '#1f2232', r: '#181a27', trim: '#2c3045' },
-      signs: [['WORK', 'OBEY', 'GROW'], ['NAXRAMUS', 'LABS'], ['ТИКЕТ', 'НЕ', 'ЖДЁТ']],
+      signs: [['WORK', 'OBEY', 'GROW'], ['MONOLITH', 'CORP'], ['ТИКЕТ', 'НЕ', 'ЖДЁТ']],
       boss: 'golem', passes: 2, enemies: ['bug', 'imp', 'spirit'],
     },
     {
-      key: 'dev', label: 'Этаж 14', name: 'Разработка', dept: 'NAXRAMUS LABS · R&D',
+      key: 'dev', label: 'Этаж 14', name: 'Разработка', dept: 'MONOLITH CORP · R&D',
       accent: '#ff3df0', accent2: '#8f63ff', floor: 'carpet',
       wall: { top: '#0d0a13', l: '#221a30', r: '#1a1426', trim: '#33264a' },
-      signs: [['MOVE', 'FAST'], ['NAXRAMUS', 'LABS'], ['KPI', '=', 'LOVE']],
+      signs: [['MOVE', 'FAST'], ['MONOLITH', 'CORP'], ['KPI', '=', 'LOVE']],
       boss: 'hydra', passes: 2, enemies: ['bug', 'imp', 'spirit', 'drone', 'cultist'],
     },
     {
-      key: 'penthouse', label: 'Пентхаус', name: 'Тронный зал', dept: 'NAXRAMUS LABS · C-LEVEL',
+      key: 'penthouse', label: 'Пентхаус', name: 'Тронный зал', dept: 'MONOLITH CORP · C-LEVEL',
       accent: '#ff2a3a', accent2: '#ffc04a', floor: 'marble',
       wall: { top: '#0b0809', l: '#21151a', r: '#180f13', trim: '#3a2228' },
-      signs: [['PRODUCTIVITY', 'IS', 'ETERNITY'], ['NAXRAMUS', 'LABS'], ['WORK', 'OBEY', 'BELONG']],
+      signs: [['PRODUCTIVITY', 'IS', 'ETERNITY'], ['MONOLITH', 'CORP'], ['WORK', 'OBEY', 'BELONG']],
       boss: 'ceo', passes: 0, enemies: ['guard', 'drone', 'cultist'],
     },
   ];
@@ -127,7 +127,7 @@
   EJ.SCENES = {
     welcome: {
       title: 'Письмо в 04:04',
-      text: 'Письмо пришло в 04:04. Клиент почты моргнул: «Отправитель не найден». И тем не менее письмо было.\n«Кандидат Эникей. Выбор сделан. Отказ не предусмотрен контрактом, который вы ещё не подписывали, но уже подписали.»\nДо рассвета в дверь постучали — три удара, ровных, громких. Незнакомец в тёмном капюшоне молча протянул бейджик и исчез.\n\n«ДОБРО ПОЖАЛОВАТЬ В НАКСРАМУС ЛАБС. ВАШ ПЕРВЫЙ ИНЦИДЕНТ УЖЕ ПРОИЗОШЁЛ.»',
+      text: 'Письмо пришло в 04:04. Клиент почты моргнул: «Отправитель не найден». И тем не менее письмо было.\n«Кандидат Эникей. Выбор сделан. Отказ не предусмотрен контрактом, который вы ещё не подписывали, но уже подписали.»\nДо рассвета в дверь постучали — три удара, ровных, громких. Незнакомец в тёмном капюшоне молча протянул бейджик и исчез.\n\n«ДОБРО ПОЖАЛОВАТЬ В MONOLITH CORP. ВАШ ПЕРВЫЙ ИНЦИДЕНТ УЖЕ ПРОИЗОШЁЛ.»',
     },
     prologue: {
       title: 'День первый',

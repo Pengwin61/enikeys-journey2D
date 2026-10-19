@@ -76,7 +76,7 @@ EJ.hud = (() => {
       cache.ticketsHtml = sig;
       $('tickets').innerHTML = (G.tickets || []).map((t, i) => {
         const q = t.quest;
-        const cost = t.kind === 'normal' ? `<span class="tcost"><span class="e">⏱ ${Math.round((1.6 + q.exp * 0.45) * 10) / 10}с</span> · <span class="b">🔥${q.burnout}</span>${q.gold ? ` · <span class="g">${q.gold}◆</span>` : ''} · ${q.exp} XP</span>` : `<span class="tcost">${t.sub}</span>`;
+        const cost = t.kind === 'normal' ? `<span class="tcost"><span class="e">⏱ ${EJ.fmtDur(EJ.workMinutes(q))}</span> · <span class="b">🔥${q.burnout}</span>${q.gold ? ` · <span class="g">${q.gold}◆</span>` : ''} · ${q.exp} XP</span>` : `<span class="tcost">${t.sub}</span>`;
         return `<li class="${t.kind} ${t.state}${G.selTicket === t ? ' sel' : ''}" data-i="${i}"><span class="tid">${t.id}${t.kind === 'elite' ? ' · ЭЛИТА' : t.kind === 'boss' ? ' · БОСС' : ''}</span><span class="tname">${t.title}</span>${cost}<i class="tprog" style="width:0"></i></li>`;
       }).join('') || '<li class="done"><span class="tname">Тасок нет. Закрой день на месте 503.</span></li>';
     }
