@@ -138,7 +138,7 @@
     cabinet: { w: 0.7, d: 0.6, h: 26, solid: true, tall: true, device: 'cabinet' },
     cooler: { w: 0.45, d: 0.45, h: 18, solid: true, tall: false },
     vending: { w: 1.1, d: 0.7, h: 40, solid: true, tall: true, device: 'coffee' },
-    printer: { w: 0.9, d: 0.7, h: 16, solid: true, tall: false, device: 'printer' },
+    printer: { w: 0.9, d: 0.7, h: 30, solid: true, tall: true, device: 'printer' },
     router: { w: 0.5, d: 0.5, h: 20, solid: true, tall: false, device: 'router' },
     ups: { w: 0.7, d: 0.7, h: 22, solid: true, tall: true, device: 'ups' },
     mtable: { w: 2.6, d: 1.4, h: 10, solid: true, tall: false, device: 'projector' },
@@ -148,6 +148,7 @@
     throne: { w: 1.6, d: 1.0, h: 44, solid: true, tall: true },
     kiosk: { w: 0.7, d: 0.6, h: 14, solid: true, tall: false },
     itshelf: { w: 1.6, d: 0.6, h: 20, solid: true, tall: false },
+    secdoor: { w: 1.6, d: 0.35, h: 50, solid: true, tall: true },
   };
 
   function furnish(L, rng) {
@@ -201,6 +202,10 @@
             for (let y = R.y + 1; y < R.y + R.h - 2; y++) { const p = put(kind, R.x, y, kind === 'itshelf' ? 2 : 1, 1, 0.15, 0.2, extra); if (p) return p; }
             return null;
           };
+          // security door: shut by day; at 00:00 the lamp turns red and the night patrol walks out
+          for (let x = R.x + R.w - 3; x > R.x && !R.secdoor; x--) R.secdoor = put('secdoor', x, R.y, 2, 1, 0.2, 0.02, { secdoor: true, wallSide: 'n' });
+          if (!R.secdoor) for (let y = R.y + R.h - 3; y > R.y && !R.secdoor; y--) R.secdoor = put('secdoor', R.x, y, 1, 2, 0.02, 0.2, { secdoor: true, wallSide: 'w', w: PROP.secdoor.d, d: PROP.secdoor.w });
+          if (!R.secdoor) return false;
           R.hr = station('kiosk', { camp: 'hr' });
           R.learn = station('kiosk', { camp: 'learn' });
           R.shelf = station('itshelf', { camp: 'shop' });
@@ -273,7 +278,7 @@
   }
 
   function validate(L) {
-    const essential = p => ['elevator', 'throne'].includes(p.kind) || p.seat || p.camp;
+    const essential = p => ['elevator', 'throne'].includes(p.kind) || p.seat || p.camp || p.secdoor;
     for (let pass = 0; pass < 50; pass++) {
       computeBlockGrid(L);
       const dist = bfs(L, Math.floor(L.rooms[0].cx), Math.floor(L.rooms[0].cy), true);
@@ -351,7 +356,7 @@
     return dist;
   }
 
-  // Shortest tile path between two points (for the neon guide thread).
+  // Shortest tile path between two points.
   function path(L, ax, ay, bx, by) {
     const dist = bfs(L, Math.floor(bx), Math.floor(by), false, 400);
     let x = Math.floor(ax), y = Math.floor(ay);
@@ -377,6 +382,8 @@
     const FOX = L.h * 16 + 24, FOY = WALL_H + 70;
     const CW = (L.w + L.h) * 16 + 48, CH = (L.w + L.h) * 8 + FOY + 40;
     L.FOX = FOX; L.FOY = FOY;
+    L.wallSigns = [];
+    L.wallNeons = [];
     const floor = canvas(CW, CH), glow = canvas(CW, CH);
     const fc = floor.getContext('2d'), gc = glow.getContext('2d');
     L.floorCanvas = floor; L.glowCanvas = glow;
@@ -438,7 +445,7 @@
     const decalCanvas = layered ? canvas(CW, CH) : floor, poolCanvas = layered ? canvas(CW, CH) : floor;
     const dc = decalCanvas.getContext('2d'), pc = poolCanvas.getContext('2d');
     if (layered) { L.decalCanvas = decalCanvas; L.poolCanvas = poolCanvas; }
-    // ---- floor decals: papers, cables, stains
+    // ---- floor decals: papers, stains
     for (const R of L.rooms) {
       const n = Math.floor(R.w * R.h / 9);
       for (let i = 0; i < n; i++) {
@@ -449,14 +456,10 @@
           const a = rng() * Math.PI;
           const c = Math.cos(a) * 3, s = Math.sin(a) * 1.5;
           poly(dc, [sx - c, sy - s - 1, sx + s * 2, sy - c * 0.5, sx + c, sy + s + 1, sx - s * 2, sy + c * 0.5], rng.chance(0.8) ? '#4b4d5c' : '#6a6d7d');
-        } else if (k < 0.7) { // cable
-          dc.fillStyle = '#0a0b10';
-          let cx = sx, cy = sy, dir = rng.chance(0.5) ? 1 : -1;
-          for (let s = 0; s < 40; s++) { dc.fillRect(Math.round(cx), Math.round(cy), 2, 1); cx += dir * 2; cy += 1 + (rng() - 0.5) * 0.6; if (rng.chance(0.08)) dir = -dir; }
-        } else if (k < 0.85) { // dark stain
+        } else if (k >= 0.7 && k < 0.85) { // dark stain
           dc.fillStyle = rng.chance(0.4) ? 'rgba(90,10,20,0.35)' : 'rgba(0,0,0,0.3)';
           EJ.groundEllipse(dc, sx, sy, 0.25 + rng() * 0.35, dc.fillStyle);
-        } else if (L.floorIdx !== 1) { // warning stripe patch
+        } else if (k >= 0.85 && L.floorIdx !== 1) { // warning stripe patch
           dc.fillStyle = 'rgba(255,190,40,0.08)';
           for (let s = 0; s < 6; s++) dc.fillRect(sx - 8 + s * 3, sy + s, 2, 1);
         }
@@ -486,7 +489,12 @@
       const tall = t.h === WALL_H;
       const c = tall ? theme.wall : { top: '#262838', l: '#161722', r: '#12131b' };
       box(wc, FOX, FOY, t.x, t.y, 1, 1, 0, t.h, c);
-      if (tall) {
+      const textured = paintWallTile(wc, t, P);
+      if (tall && textured) {
+        const [tx0, ty0] = P(t.x, t.y + 1, t.h), [tx1, ty1] = P(t.x + 1, t.y + 1, t.h), [tx2, ty2] = P(t.x + 1, t.y, t.h);
+        line(wc, tx0, ty0, tx1, ty1, '#3a3f55'); line(wc, tx1, ty1, tx2, ty2, '#30344a');
+        t.faceY = isFloor(t.x, t.y + 1); t.faceX = isFloor(t.x + 1, t.y);
+      } else if (tall) {
         // faces: seams, baseboard, trim
         const faceY = isFloor(t.x, t.y + 1), faceX = isFloor(t.x + 1, t.y);
         const [lx, ly] = P(t.x, t.y + 1), [bx, by] = P(t.x + 1, t.y + 1), [rx, ry] = P(t.x + 1, t.y);
@@ -505,14 +513,17 @@
         line(wc, tx0, ty0, tx1, ty1, '#3a3d52'); line(wc, tx1, ty1, tx2, ty2, '#34374a');
       }
     }
-    decorateWalls(L, wallTiles, wc, gc, pc, P, rng, pools);
+    const decoCanvas = canvas(CW, CH), dcx = decoCanvas.getContext('2d');
+    decorateWalls(L, wallTiles, dcx, gc, pc, P, rng, pools);
+    wc.drawImage(decoCanvas, 0, 0);
+    const wallTextured = !!(EJ.assets && EJ.assets.get('wall_face'));
 
     // ---- props: bake sprites, their glows into the static glow layer and light pools on floor
     for (const p of L.props) {
       bakeProp(p, theme, rng);
       const [sx, sy] = P(p.x, p.y);
-      if (p.glowImg && !(EJ.assets && EJ.assets.forProp(p))) gc.drawImage(p.glowImg, sx + p.px, sy + p.py);
-      if (p.light) pools.push([p.x + p.w / 2 + (p.lightOff?.[0] || 0), p.y + p.d / 2 + (p.lightOff?.[1] || 0.6), p.light, p.lightR || 1.6, p.lightA || 0.35]);
+      if (p.kind !== 'pillar' && p.glowImg && !(EJ.assets && EJ.assets.forProp(p))) gc.drawImage(p.glowImg, sx + p.px, sy + p.py);
+      if (p.kind !== 'pillar' && p.light) pools.push([p.x + p.w / 2 + (p.lightOff?.[0] || 0), p.y + p.d / 2 + (p.lightOff?.[1] || 0.6), p.light, p.lightR || 1.6, p.lightA || 0.35]);
     }
 
     // ---- apply light pools (additive) on floor
@@ -541,7 +552,14 @@
       poly(cx, pts, '#fff');
       cx.globalCompositeOperation = 'source-in';
       cx.drawImage(wallCanvas, -sx0, -sy0);
-      L.walls.push({ x: t.x, y: t.y, tall: t.h === WALL_H, h: t.h, img: c, ox: sx0 - FOX, oy: sy0 - FOY, depth: t.x + t.y + 1, fade: 1 });
+      let deco = null;
+      if (wallTextured) {
+        deco = canvas(w, h); const dx = deco.getContext('2d');
+        poly(dx, pts, '#fff'); dx.globalCompositeOperation = 'source-in'; dx.drawImage(decoCanvas, -sx0, -sy0);
+      }
+      const wx = sx0 - FOX, wy = sy0 - FOY;
+      const signs = L.wallSigns.filter(s => s.bounds.r > wx && s.bounds.l < wx + w && s.bounds.b > wy && s.bounds.t < wy + h);
+      L.walls.push({ x: t.x, y: t.y, tall: t.h === WALL_H, h: t.h, img: c, ox: wx, oy: wy, depth: t.x + t.y + 1, fade: 1, clip: pts, signs, neon: t.neon, tile: t, deco, sx0, sy0 });
     }
     computeBlockGrid(L);
     L.doorLock = new Uint8Array(L.w * L.h);
@@ -554,6 +572,70 @@
       for (let i = 0; i < pts.length - 1; i++) EJ.line(ctx, sx + pts[i][0], sy + pts[i][1], sx + pts[i + 1][0], sy + pts[i + 1][1], col);
       EJ.line(ctx, sx - 16, sy + 4, sx + 16, sy + 4, col);
     }
+  }
+
+  // painted wall textures (assets/gen/painted/tiles/wall_*.png) mapped onto the iso faces of one wall tile
+  function paintWallTile(ctx, t, P) {
+    const A = EJ.assets;
+    const face = A && A.get('wall_face'), top = A && A.get('wall_top');
+    if (!face) return false;
+    const alt = A.get('wall_face_alt') || face;
+    const H = t.h, tex = (((t.x >> 2) * 7 + (t.y >> 2) * 13) % 5 === 0) ? alt : face;
+    const srcH = tex.img.height * (H / WALL_H), srcY = tex.img.height - srcH;
+    const quarter = tex.img.width / 4;
+    const faceOf = (kind, o, corners, uIdx, shade) => {
+      ctx.save();
+      ctx.beginPath(); corners.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.clip();
+      ctx.transform(1, kind === 'Y' ? 0.5 : -0.5, 0, 1, o[0], o[1]);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(tex.img, (((uIdx % 4) + 4) % 4) * quarter, srcY, quarter, srcH, 0, 0, 16, H);
+      if (shade) { ctx.fillStyle = `rgba(0,0,0,${shade})`; ctx.fillRect(0, 0, 16, H); }
+      ctx.restore();
+    };
+    // +y face (lower-left) and +x face (lower-right, a bit darker)
+    faceOf('Y', P(t.x, t.y + 1, H), [P(t.x, t.y + 1, 0), P(t.x + 1, t.y + 1, 0), P(t.x + 1, t.y + 1, H), P(t.x, t.y + 1, H)], t.x, 0.32);
+    faceOf('X', P(t.x + 1, t.y + 1, H), [P(t.x + 1, t.y + 1, 0), P(t.x + 1, t.y, 0), P(t.x + 1, t.y, H), P(t.x + 1, t.y + 1, H)], -(t.y + 1), 0.52);
+    if (top) {
+      ctx.save();
+      const c4 = [P(t.x, t.y, H), P(t.x + 1, t.y, H), P(t.x + 1, t.y + 1, H), P(t.x, t.y + 1, H)];
+      ctx.beginPath(); c4.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.clip();
+      const [ox, oy] = c4[0], s = top.img.width;
+      ctx.transform(16 / s, 8 / s, -16 / s, 8 / s, ox, oy);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(top.img, 0, 0);
+      ctx.fillStyle = 'rgba(4,5,10,0.55)'; ctx.fillRect(0, 0, s, s);
+      ctx.restore();
+    }
+    return true;
+  }
+
+  // Rebuilds one wall slice at k× resolution: painted texture drawn sharp, decorations (low-res) on top.
+  function buildHiWall(L, wall, k) {
+    const t = wall.tile, w = wall.img.width, h = wall.img.height;
+    const c = canvas(w * k, h * k), ctx = c.getContext('2d');
+    const P = (x, y, z = 0) => [L.FOX + (x - y) * 16, L.FOY + (x + y) * 8 - z];
+    ctx.scale(k, k);
+    ctx.beginPath(); for (let i = 0; i < wall.clip.length; i += 2) (i ? ctx.lineTo : ctx.moveTo).call(ctx, wall.clip[i], wall.clip[i + 1]); ctx.closePath(); ctx.clip();
+    ctx.drawImage(wall.img, 0, 0); // base colours under the texture edges
+    ctx.translate(-wall.sx0, -wall.sy0);
+    paintWallTile(ctx, t, P);
+    if (t.h === WALL_H) {
+      const [tx0, ty0] = P(t.x, t.y + 1, t.h), [tx1, ty1] = P(t.x + 1, t.y + 1, t.h), [tx2, ty2] = P(t.x + 1, t.y, t.h);
+      ctx.strokeStyle = 'rgba(70,78,104,0.9)'; ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.moveTo(tx0, ty0); ctx.lineTo(tx1, ty1); ctx.lineTo(tx2, ty2); ctx.stroke();
+    }
+    if (t.wallArt) {
+      const wa = t.wallArt, art = EJ.assets.get(wa.name);
+      if (art) {
+        ctx.save(); ctx.transform(1, wa.kind === 'Y' ? 0.5 : -0.5, 0, 1, wa.fx, wa.fy);
+        ctx.imageSmoothingEnabled = true; ctx.drawImage(art.img, art.x, art.y, art.w, art.h, wa.u, wa.v, wa.w, wa.h);
+        ctx.restore();
+      }
+    }
+    ctx.setTransform(k, 0, 0, k, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    if (wall.deco) ctx.drawImage(wall.deco, 0, 0);
+    return c;
   }
 
   function faceCtx(ctx, kind, x0, y0) {
@@ -591,28 +673,18 @@
 
       // big sign in the middle of long runs
       let signFrom = -1, signLen = 0;
-      if (R && n >= 5 && rng.chance(0.85)) {
-        signLen = Math.min(n - 2, R.type === 'boss' ? 5 : rng.int(3, 4));
-        signFrom = Math.floor((n - signLen) / 2);
+      if (R && n >= 5 && (rng.chance(0.85) || ['start', 'lobby'].includes(R.type))) {
         const sign = ['boss', 'start', 'throne', 'lobby', 'lift'].includes(R.type) ? ['MONOLITH'] : rng.pick(theme.signs);
+        signLen = Math.min(n - 2, sign[0] === 'MONOLITH' ? 6 : rng.int(3, 4));
+        signFrom = Math.floor((n - signLen) / 2);
         const uX = signFrom * 16, uW = signLen * 16;
+        const signColor = ['boss', 'throne'].includes(R.type) ? EJ.brand.palette.red : EJ.brand.palette.amber;
         for (const ctx of [wc, gc]) {
           faceCtx(ctx, run.kind, ox, oy);
           if (sign[0] === 'MONOLITH') {
-            if (ctx === wc) {
-              ctx.fillStyle = '#4a0b18'; ctx.fillRect(uX + 2, 5, uW - 4, 38);
-              ctx.fillStyle = '#360712';
-              for (let k = uX + 6; k < uX + uW - 4; k += 7) ctx.fillRect(k, 5, 2, 38);
-              ctx.fillStyle = '#5e0f20'; ctx.fillRect(uX + 2, 5, uW - 4, 2);
-            }
-            ctx.fillStyle = ctx === wc ? '#ff3355' : 'rgba(255,40,80,0.8)';
-            const cxm = uX + uW / 2;
-            // logo: a black monolith slab with a glowing slit
-            ctx.fillRect(cxm - 4, 6, 8, 14);
-            if (ctx === wc) { ctx.fillStyle = '#1a0408'; ctx.fillRect(cxm - 3, 7, 6, 12); ctx.fillStyle = '#ff3355'; }
-            ctx.fillRect(cxm, 8, 1, 10);
-            ctx.font = 'bold 9px "Oswald", "Arial Narrow", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText('MONOLITH', cxm, 28); ctx.font = 'bold 6px "Oswald", sans-serif'; ctx.fillText('C O R P', cxm, 37);
+            // Only the mounting plate belongs in the low-resolution wall bake.
+            // The logo itself is rendered at display resolution with its wall.
+            if (ctx === wc) EJ.brand.drawSign(ctx, uX + 2, 11, uW - 4, 26, { color: signColor, logo: false });
           } else if (ctx === wc) {
             ctx.fillStyle = 'rgba(120,125,150,0.20)';
             ctx.font = 'bold 11px "Oswald", "Arial Narrow", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -622,8 +694,13 @@
           ctx.setTransform(1, 0, 0, 1, 0, 0);
         }
         if (sign[0] === 'MONOLITH') {
+          const slope = run.kind === 'Y' ? .5 : -.5;
+          const x = ox - L.FOX, y = oy - L.FOY, u = uX + 2, v = 11, w = uW - 4, h = 26;
+          const y1 = y + slope * u + v, y2 = y + slope * (u + w) + v;
+          L.wallSigns.push({ x, y, slope, u, v, w, h, color: signColor,
+            bounds: { l: x + u, r: x + u + w, t: Math.min(y1, y2), b: Math.max(y1, y2) + h } });
           const mid = run.tiles[signFrom + (signLen >> 1)];
-          pools.push(run.kind === 'Y' ? [mid.x + 0.5, mid.y + 2, theme.accent, 3.2, 0.32] : [mid.x + 2, mid.y + 0.5, theme.accent, 3.2, 0.32]);
+          pools.push(run.kind === 'Y' ? [mid.x + 0.5, mid.y + 2, signColor, 3.2, 0.32] : [mid.x + 2, mid.y + 0.5, signColor, 3.2, 0.32]);
         }
         for (let i = signFrom; i < signFrom + signLen; i++) used.add(run.tiles[i]);
       }
@@ -634,26 +711,24 @@
         const u0 = 0;
         const roll = (t.x * 31 + t.y * 17 + L.seed) % 7;
         if (i % 3 === 1 && roll !== 3) {
-          // vertical neon strip
-          for (const ctx of [wc, gc]) {
-            faceCtx(ctx, run.kind, fx, fy);
-            ctx.fillStyle = ctx === wc ? '#3a0a14' : 'rgba(0,0,0,0)';
-            if (ctx === wc) ctx.fillRect(u0 + 6, 6, 4, WALL_H - 12);
-            ctx.fillStyle = theme.accent; ctx.fillRect(u0 + 7, 7, 2, WALL_H - 14);
-            if (ctx === wc) { ctx.fillStyle = '#ffd0da'; ctx.fillRect(u0 + 7, 9, 1, WALL_H - 18); }
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
+          // Bake only the mounting channel. Colored light is dynamic, just
+          // like the free-standing pillars, and must not retain a red bake.
+          // with painted walls the channel is drawn at full resolution by the renderer instead
+          if (!(EJ.assets && EJ.assets.get('wall_face'))) {
+            faceCtx(wc, run.kind, fx, fy);
+            wc.fillStyle = '#101925'; wc.fillRect(u0 + 6, 6, 4, WALL_H - 12);
+            wc.setTransform(1, 0, 0, 1, 0, 0);
           }
           const g = run.kind === 'Y' ? [t.x + 0.5, t.y + 1.6] : [t.x + 1.6, t.y + 0.5];
-          pools.push([...g, theme.accent, 1.9, 0.45]);
-          // wet reflection streak
           const [px, py] = run.kind === 'Y' ? P(t.x + 0.5, t.y + 1) : P(t.x + 1, t.y + 0.5);
-          fc.globalCompositeOperation = 'lighter';
-          fc.fillStyle = rgba(theme.accent, 0.12); fc.fillRect(px - 1, py + 1, 2, 18);
-          fc.fillStyle = rgba(theme.accent, 0.06); fc.fillRect(px - 2, py + 1, 4, 26);
-          fc.globalCompositeOperation = 'source-over';
+          t.neon = { x: fx - L.FOX, y: fy - L.FOY, slope: run.kind === 'Y' ? .5 : -.5,
+            lightX: g[0], lightY: g[1], reflectionX: px - L.FOX, reflectionY: py - L.FOY };
+          L.wallNeons.push(t.neon);
         } else if (roll === 3 && R) {
-          // wall screen / dashboard
-          for (const ctx of [wc, gc]) {
+          // wall screen / dashboard (painted art is drawn at full resolution by buildHiWall)
+          const paintedScreen = EJ.assets && EJ.assets.get('wall_screen');
+          if (paintedScreen) t.wallArt = { name: 'wall_screen', kind: run.kind, fx, fy, u: 2, v: 12, w: 12, h: 10 };
+          for (const ctx of paintedScreen ? [gc] : [wc, gc]) {
             faceCtx(ctx, run.kind, fx, fy);
             if (ctx === wc) { ctx.fillStyle = '#07080c'; ctx.fillRect(2, 12, 12, 10); }
             ctx.fillStyle = rgba(theme.accent2, ctx === wc ? 0.85 : 0.6); ctx.fillRect(3, 13, 10, 8);
@@ -668,6 +743,7 @@
           pools.push([...g, theme.accent2, 1.3, 0.3]);
         } else if (roll === 5) {
           // vent
+          if (EJ.assets && EJ.assets.get('wall_vent')) { t.wallArt = { name: 'wall_vent', kind: run.kind, fx, fy, u: 3, v: 29, w: 10, h: 9 }; return; }
           faceCtx(wc, run.kind, fx, fy);
           wc.fillStyle = '#0d0e15'; wc.fillRect(3, 30, 10, 8);
           wc.fillStyle = '#25283a'; for (let k = 0; k < 4; k++) wc.fillRect(4, 31 + k * 2, 8, 1);
@@ -751,15 +827,10 @@
         break;
       }
       case 'pillar': {
+        // Only the metal is static. Strips and light pools change with day/night
+        // in the renderer, including when PNG art is missing or disabled.
         box(c, ox, oy, 0, 0, w, d, 0, h, { top: '#1e2130', l: '#191b27', r: '#13141d', edge: '#2c3044' });
-        const [ax, ay] = Pt(0.5, d), [bx, by] = Pt(w, 0.5);
-        for (const ctx of [c, g]) {
-          line(ctx, ax, ay - 4, ax, ay - h + 4, A);
-          line(ctx, bx, by - 4, bx, by - h + 4, A);
-        }
-        c.fillStyle = '#ffd6de'; c.fillRect(ax, ay - h + 8, 1, h - 16);
-        glowUsed = true;
-        p.light = A; p.lightR = 2.2; p.lightA = 0.4;
+        p.lightR = 2.2;
         break;
       }
       case 'plant': {
@@ -819,7 +890,23 @@
         poly(c, scr, col); G(gg => poly(gg, scr, EJ.rgba(col, 0.85)));
         c.save(); c.setTransform(1, 0.5, 0, 1, s.at[0] + 2, s.at[1] + 3);
         c.fillStyle = '#05060a'; c.font = 'bold 6px monospace'; c.fillText(p.camp === 'hr' ? 'HR' : 'EDU', 1, 7); c.restore();
+        const [brandX, brandY] = Pt(w / 2, d, h * .65);
+        c.save(); c.translate(brandX, brandY); c.transform(1, .5, 0, 1, 0, 0);
+        EJ.brand.drawMark(c, -2, -3, 4, 5, EJ.brand.palette.ivory, true); c.restore();
         p.light = col; p.lightR = 1.6; p.lightA = 0.4; p.lightOff = [0, 0.7];
+        break;
+      }
+      case 'secdoor': {
+        const s = box(c, ox, oy, 0, 0, w, d, 0, h, { top: '#1a1c26', l: '#232634', r: '#1a1c27', edge: '#343849' });
+        const [a, b] = p.wallSide === 'w' ? [s.e, s.b] : [s.a, s.b];
+        const lf = (t, z) => [EJ.lerp(a[0], b[0], t), EJ.lerp(a[1], b[1], t) - z];
+        poly(c, [...lf(0.14, 2), ...lf(0.86, 2), ...lf(0.86, 38), ...lf(0.14, 38)], '#3a3f50');
+        poly(c, [...lf(0.18, 4), ...lf(0.82, 4), ...lf(0.82, 36), ...lf(0.18, 36)], '#2b2f3d');
+        for (const tt of [0.32, 0.68]) { const q0 = lf(tt, 8), q1 = lf(tt, 32); line(c, q0[0], q0[1], q1[0], q1[1], '#454b60'); }
+        // hazard stripes on the frame and a small card reader
+        for (let k = 0; k < 6; k++) { const q = lf(0.1 + k * 0.16, 1); c.fillStyle = k % 2 ? '#1a1c26' : '#d9a72b'; c.fillRect(Math.round(q[0]), Math.round(q[1]) - 2, 4, 2); }
+        const rd = lf(0.92, 20); c.fillStyle = '#0b0c11'; c.fillRect(Math.round(rd[0]) - 1, Math.round(rd[1]) - 3, 3, 5);
+        p.frame = { a: lf(0.14, 2), b: lf(0.86, 2), c: lf(0.86, 38), d: lf(0.14, 38), lamp: lf(0.5, 44), reader: rd };
         break;
       }
       case 'itshelf': {
@@ -846,6 +933,9 @@
         box(c, ox, oy, 0, 0, w, d, 0, h, { top: '#6b5536', l: '#56432a', r: '#473722', edge: '#7d6642' });
         const [ax, ay] = Pt(0, d, h / 2), [bx, by] = Pt(w, d, h / 2);
         line(c, ax, ay, bx, by, '#3a2c1a');
+        const [brandX, brandY] = Pt(w * .55, d, h * .72);
+        c.save(); c.translate(brandX, brandY); c.transform(1, .5, 0, 1, 0, 0);
+        EJ.brand.drawMark(c, -2.5, -2, 5, 6, EJ.brand.palette.ink, true); c.restore();
         break;
       }
       case 'sofa': {
@@ -854,10 +944,19 @@
         break;
       }
       case 'printer': {
-        box(c, ox, oy, 0, 0, w, d, 0, 8, { top: '#2a2d3a', l: '#20222d', r: '#191b24' });
-        box(c, ox, oy, 0.05, 0.05, w - 0.1, d - 0.1, 8, 7, { top: '#7d8294', l: '#5e6274', r: '#4f5364', edge: '#9aa0b4' });
-        box(c, ox, oy, 0.15, 0.3, w - 0.3, 0.35, 15, 1, { top: '#d8d8e0', l: '#b8b8c2', r: '#a8a8b2' });
-        const [lx, ly] = Pt(w * 0.8, d, 11);
+        // One floor-anchored station: drawer cabinet (14 px), printer (16 px).
+        const base = h - 16;
+        box(c, ox, oy, 0, 0, w, d, 0, base, { top: '#485366', l: '#303a4a', r: '#242d3c', edge: '#66758a' });
+        const [ax, ay] = Pt(.04, d, base / 2), [bx, by] = Pt(w - .04, d, base / 2);
+        line(c, ax, ay, bx, by, '#131b27');
+        for (const z of [base * .25, base * .75]) {
+          const [hx, hy] = Pt(w / 2, d, z);
+          c.fillStyle = '#a1aaba'; c.fillRect(Math.round(hx - 2), Math.round(hy), 4, 1);
+        }
+        box(c, ox, oy, .04, .04, w - .08, d - .08, base, 8, { top: '#2a2d3a', l: '#20222d', r: '#191b24' });
+        box(c, ox, oy, 0.05, 0.05, w - 0.1, d - 0.1, base + 8, 7, { top: '#7d8294', l: '#5e6274', r: '#4f5364', edge: '#9aa0b4' });
+        box(c, ox, oy, 0.15, 0.3, w - 0.3, 0.35, base + 15, 1, { top: '#d8d8e0', l: '#b8b8c2', r: '#a8a8b2' });
+        const [lx, ly] = Pt(w * 0.8, d, base + 11);
         for (const ctx of [c, g]) { ctx.fillStyle = '#4dff9a'; ctx.fillRect(Math.round(lx), Math.round(ly), 2, 1); }
         glowUsed = true;
         p.leds = [[Math.round(lx) - 3, Math.round(ly), '#ffb03a', 0, 3]];
@@ -968,5 +1067,5 @@
     for (const d of R.doors) { d.locked = locked; L.doorLock[L.idx(d.x, d.y)] = locked ? 1 : 0; }
   }
 
-  EJ.level = { generate, bake, path, solidAt, bulletBlocked, los, roomOf, flowField, setRoomLock, tileAt, WALL_H, PROP, bakeProp };
+  EJ.level = { buildHiWall, generate, bake, path, solidAt, bulletBlocked, los, roomOf, flowField, setRoomLock, tileAt, WALL_H, PROP, bakeProp };
 })();

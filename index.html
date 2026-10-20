@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#05050a">
 <title>Enikey Journey</title>
+<link rel="icon" type="image/svg+xml" href="assets/brand/monolith-mark-amber.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Oswald:wght@500;700&display=swap" rel="stylesheet">
@@ -17,18 +18,20 @@
 <!-- ============================== HUD -->
 <div id="hud" class="hud" hidden>
   <section class="hud-player">
-    <div class="portrait"><canvas id="portrait"></canvas><span class="lvl" id="lvl">1</span></div>
+    <div class="portrait">
+      <img id="portrait" class="crop" src="concept/340ddb92-778f-40aa-a184-ab4f022c1c50.png" alt="Портрет Эникея" width="1672" height="941">
+    </div>
     <div class="pinfo">
-      <div class="pname">Эникей <span id="rank">Эникей · место 503</span></div>
+      <div class="pname">Эникей <span class="lvl" id="lvl" aria-label="Уровень персонажа">1</span><span id="rank">Эникей</span></div>
       <div class="bar hp" title="Здоровье"><i id="hpFill"></i><span id="hpText"></span></div>
       <div class="bar en" title="Энергия: тратится на таски и поиск уязвимостей"><i id="enFill"></i><span id="enText"></span></div>
-      <div class="bar bo" title="Выгорание: выше 50% падает урон, 100% — конец"><i id="boFill"></i><span id="boText"></span></div>
+      <div class="bar bo" title="Выгорание: выше 50% падает урон, 100% — конец"><i id="boFill"></i><span class="burnout-label"><img class="burnout-icon" src="assets/ui/burnout.svg" alt="" aria-hidden="true"><em id="boText"></em></span></div>
       <div class="xp" title="Опыт"><i id="xpFill"></i></div>
     </div>
   </section>
 
   <section class="tracker">
-    <div class="tr-head"><span>ТРЕКЕР</span><b id="dayLabel">День 1</b></div>
+    <div class="tr-head"><span>ТРЕКЕР</span></div>
     <div class="obj main">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h18l-1.5-10-4.5 4-3-7-3 7-4.5-4z" fill="#f2b632"/><rect x="3" y="19" width="18" height="2" fill="#f2b632"/></svg>
       <div><small>Основная цель:</small><span id="objMain">Добраться до CEO</span></div>
@@ -38,9 +41,13 @@
   </section>
 
   <section class="floorinfo">
-    <div class="floorname"><span id="floorName">Этаж 1</span></div>
+    <div class="floor-status">
+      <div class="floor-details">
+        <div class="floorname"><span id="floorName">Этаж 1 · Helpdesk · Ряд 7</span></div>
+      </div>
+      <div id="gameClock" class="game-clock" aria-label="День и игровое время">День 1 · 09:00</div>
+    </div>
     <div class="minimap"><canvas id="minimap"></canvas></div>
-    <div class="dept" id="dept">MONOLITH CORP</div>
   </section>
 
   <section class="abilities">
@@ -53,7 +60,7 @@
   </section>
 
   <section class="wallet">
-    <div class="coin" title="Золото"><svg viewBox="0 0 24 24"><path d="M3 15l9-4 9 4-9 4z" fill="#b8841f"/><path d="M3 12l9-4 9 4-9 4z" fill="#f2b632"/><path d="M3 9l9-4 9 4-9 4z" fill="#ffd76a"/></svg><span id="gold">0</span></div>
+    <div class="coin" title="Золото"><img id="coinIcon" alt="" width="28" height="28" hidden><svg id="coinFallback" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15l9-4 9 4-9 4z" fill="#b8841f"/><path d="M3 12l9-4 9 4-9 4z" fill="#f2b632"/><path d="M3 9l9-4 9 4-9 4z" fill="#ffd76a"/></svg><span id="gold">0</span></div>
     <div class="docs" title="Пропуска к боссу"><svg viewBox="0 0 24 24"><path d="M12 2l7 8-7 12-7-12z" fill="#9b5cff"/><path d="M12 2l7 8h-7z" fill="#c9a2ff"/></svg><span id="passes">0</span></div>
   </section>
 
@@ -77,25 +84,42 @@
   <div class="title-art"></div>
   <div class="title-grid">
     <div class="logo-block">
-      <div class="badge-line"><span class="pill">MONOLITH CORP</span><span>Прототип · сборка 0.3</span></div>
+      <img class="corp-logo corp-logo-title" src="assets/brand/monolith-lockup-amber.svg" alt="Monolith Corp — People, Data, Progress" width="520" height="128">
+      <div class="badge-line"><span>Прототип · сборка 0.3</span></div>
       <h1 class="logo"><span class="l1">ENIKEY</span><span class="l2">JOURNEY</span></h1>
-      <p class="tagline">WORK <i>•</i> SURVIVE <i>•</i> CLIMB</p>
-      <p class="lead">Сезонный эникей устраивается на самое дно мегакорпорации. Тикеты, баги, выгорание, элитные сеньоры и боссы-менеджеры — этаж за этажом, до тронного зала.<br>Но трон нельзя разрушить. Его можно только занять.</p>
+      <p class="tagline">WORK SURVIVE CLIMB</p>
+      <nav class="title-menu" id="menuMain" aria-label="Главное меню">
+        <button class="tm-item" data-menu="new"><span>Новая смена</span><small>с прологом</small></button>
+        <button class="tm-item" data-menu="skip"><span>Сразу на работу</span><small>без пролога</small></button>
+        <button class="tm-item" data-menu="settings"><span>Настройки</span><small>звук</small></button>
+        <button class="tm-item" data-menu="controls"><span>Управление</span></button>
+      </nav>
+      <nav class="title-menu" id="menuSettings" aria-label="Настройки" hidden>
+        <button class="tm-item" data-menu="sound"><span id="tmSound">Звук: вкл</span></button>
+        <button class="tm-item back" data-menu="back"><span>← Назад</span></button>
+      </nav>
+      <div class="title-menu tm-controls" id="menuControls" hidden>
+        <div class="ctl-grid">
+          <span>Движение</span><kbd>W A S D</kbd>
+          <span>Атака</span><kbd>ЛКМ</kbd>
+          <span>Reject / блок</span><kbd>SHIFT</kbd>
+          <span>Рывок</span><kbd>SPACE</kbd>
+          <span>Найти уязвимость</span><kbd>Q</kbd>
+          <span>Работать · говорить</span><kbd>E</kbd>
+          <span>Следующая таска</span><kbd>TAB</kbd>
+          <span>Предметы · инвентарь</span><kbd>1–5 · I</kbd>
+        </div>
+        <button class="tm-item back" data-menu="back"><span>← Назад</span></button>
+      </div>
+      <p class="tm-hint"><kbd>↑</kbd><kbd>↓</kbd> выбор · <kbd>Enter</kbd> подтвердить · <kbd>Esc</kbd> назад</p>
       <p class="prevceo" id="prevCeo" hidden></p>
     </div>
-    <div class="mail">
-      <div class="mail-head"><span class="mail-time">04:04</span><div><strong>Отправитель не найден</strong><p>Тема: Кандидат Эникей</p></div></div>
+  </div>
+  <div class="mail-toast" id="mailToast" hidden>
+    <button class="mt-head" id="mailToggle"><i class="mt-dot"></i><span class="mail-time">04:04</span><span><strong>Отправитель не найден</strong><small>Тема: Кандидат Эникей</small></span></button>
+    <div class="mt-body" id="mailBody" hidden>
       <p class="mail-body" id="mailLine">«Кандидат Эникей. Выбор сделан. Отказ не предусмотрен контрактом, который вы ещё не подписывали, но уже подписали.»</p>
-      <ol class="hr-options">
-        <li><button data-act="start"><kbd>1</kbd>Открыть дверь</button></li>
-        <li><button data-act="ignore"><kbd>2</kbd>Не открывать</button></li>
-        <li><button data-act="reply"><kbd>3</kbd>Ответить на письмо</button></li>
-        <li><button data-act="skip"><kbd>4</kbd>Сразу на работу (без пролога)</button></li>
-      </ol>
-      <div class="controls-mini">
-        <span><kbd>WASD</kbd> движение</span><span><kbd>ЛКМ</kbd> атака</span><span><kbd>SHIFT</kbd> защита</span><span><kbd>SPACE</kbd> рывок</span>
-        <span><kbd>Q</kbd> уязвимость</span><span><kbd>E</kbd> работать</span><span><kbd>1–5</kbd> предметы</span><span><kbd>I</kbd> инвентарь</span>
-      </div>
+      <button class="btn primary" data-menu="new">Открыть дверь</button>
     </div>
   </div>
 </section>
@@ -111,6 +135,7 @@
 
 <section id="floorCard" class="screen floorcard" hidden>
   <div class="fc-inner">
+    <img class="corp-logo corp-logo-transition" src="assets/brand/monolith-lockup-amber.svg" alt="Monolith Corp — People, Data, Progress" width="520" height="128">
     <span class="fc-eyebrow" id="fcEyebrow">ЛИФТ</span>
     <h2 id="fcTitle"></h2>
     <p id="fcSub"></p>
@@ -160,6 +185,7 @@
 
 <section id="pause" class="screen pause" hidden>
   <div class="panel">
+    <img class="corp-logo corp-logo-pause" src="assets/brand/monolith-lockup-ivory.svg" alt="Monolith Corp — People, Data, Progress" width="520" height="128">
     <span class="eyebrow">ПЕРЕРЫВ</span>
     <h2>Пауза</h2>
     <div class="ctl-grid">
@@ -209,8 +235,10 @@
 <div id="touchNote" class="touchnote" hidden>Прототип рассчитан на клавиатуру и мышь.</div>
 
 <script src="src/core.js"></script>
+<script src="src/brand.js"></script>
 <script src="src/audio.js"></script>
 <script src="src/data.js"></script>
+<script src="src/watch.js"></script>
 <script src="src/sprites.js"></script>
 <script src="src/assets.js"></script>
 <script src="src/level.js"></script>

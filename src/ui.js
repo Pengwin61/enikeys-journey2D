@@ -14,14 +14,22 @@ EJ.hud = (() => {
     return true;
   };
   const timers = { banner: 0, toast: 0, loot: 0, speech: 0 };
-  const ICON = { screwdriver: '🪛', crimper: '🔌', mug: '☕', laptop: '💻', multimeter: '📟', license: '🪟', badge: '🪪', usb: '💾', cert: '📜', can: '🥫', coffee: '🫘', pills: '💊', paste: '🧴', bandage: '🩹', cap: '🧢' };
+  const ICON = { watch: '⌚', screwdriver: '🪛', crimper: '🔌', mug: '☕', laptop: '💻', multimeter: '📟', license: '🪟', badge: '🪪', usb: '💾', cert: '📜', can: '🥫', coffee: '🫘', pills: '💊', paste: '🧴', bandage: '🩹', cap: '🧢' };
+  const itemIcon = icon => icon === 'badge'
+    ? '<img class="corp-item-icon" src="assets/brand/monolith-badge.svg" alt="Корпоративный бейдж Monolith">'
+    : ICON[icon];
   EJ.ICON = ICON;
   let speechTarget = null;
 
   function init() {
-    const p = $('portrait'), spr = EJ.sprites.portrait;
-    p.width = spr.w; p.height = spr.h;
-    p.getContext('2d').drawImage(spr.img, 0, 0);
+    const coin = $('coinIcon'), coinFallback = $('coinFallback');
+    coin.onload = () => { coin.hidden = false; coinFallback.hidden = true; };
+    coin.onerror = () => { coin.hidden = true; coinFallback.hidden = false; };
+    coin.src = `assets/gen/${EJ.assets.style}/ui/coin_token.png`;
+    // portrait: generated per style; until it exists, the hero is cropped from the gameplay concept
+    const pimg = new Image();
+    pimg.onload = () => { const p = $('portrait'); p.src = pimg.src; p.className = 'full'; };
+    pimg.src = `assets/gen/${EJ.assets.style}/ui/enikey_portrait.png`;
     $('itemSlots').innerHTML = EJ.ACTIVE_SLOTS.map((id, i) => {
       const it = EJ.ITEMS[id];
       return `<div class="islot empty" data-item="${id}" data-slot="${i + 1}" title="${it.name}: +${it.value} ${it.text}"><kbd>${i + 1}</kbd><div class="icon">${ICON[it.icon]}<b></b></div><small>${it.name}</small></div>`;
@@ -37,12 +45,12 @@ EJ.hud = (() => {
     set('hpFill', 'width', `${(100 * P.hp.cur) / P.hp.max}%`);
     set('enText', 'text', `⚡ ${P.energy.cur} / ${P.energy.max}`);
     set('enFill', 'width', `${(100 * P.energy.cur) / P.energy.max}%`);
-    set('boText', 'text', `🔥 ${Math.round(P.burnout.cur)}% · ${burnLabel(P.burnout.cur)}`);
+    set('boText', 'text', `${Math.round(P.burnout.cur)}% · ${burnLabel(P.burnout.cur)}`);
     set('boFill', 'width', `${P.burnout.cur}%`);
     $('boFill').parentElement.classList.toggle('hot', P.burnout.cur >= 60);
     set('xpFill', 'width', `${(100 * P.exp.cur) / P.exp.max}%`);
     set('lvl', 'text', String(P.level));
-    set('rank', 'text', `${EJ.ent.rank(P)} · место 503${G.cycle ? ' · цикл ' + (G.cycle + 1) : ''}`);
+    set('rank', 'text', `${EJ.ent.rank(P)}${G.cycle ? ' · цикл ' + (G.cycle + 1) : ''}`);
     if (set('gold', 'text', String(P.gold))) bump('gold');
     const need = G.floor.passes;
     if (set('passes', 'text', need ? `${P.passes}/${need}` : String(P.passes))) bump('passes');
@@ -58,8 +66,14 @@ EJ.hud = (() => {
       const id = el.dataset.item, has = id in P.inv;
       el.classList.toggle('empty', !has);
       const g = has ? EJ.GRADES[P.inv[id]] : null;
-      const key = has ? g.name : '';
-      if (el.dataset.g !== key) { el.dataset.g = key; el.querySelector('.icon').style.borderColor = has ? g.color : ''; el.querySelector('b').textContent = has && P.inv[id] ? g.name[0] : ''; el.querySelector('b').style.color = has ? g.color : ''; }
+      const key = has ? String(g.id) : '';
+      if (el.dataset.g !== key) {
+        el.dataset.g = key;
+        el.querySelector('.icon').style.borderColor = has ? g.color : '';
+        el.querySelector('.icon').style.boxShadow = has ? `inset 0 0 10px ${g.color}25` : '';
+        el.querySelector('small').style.color = has ? g.color : '';
+        el.querySelector('b').textContent = '';
+      }
     }
 
     $('hurt').style.opacity = String(Math.max(0, G.hurtFlash));
@@ -69,14 +83,15 @@ EJ.hud = (() => {
 
     // tracker
     const hh = Math.floor(G.clock / 60) % 24, mm = Math.floor(G.clock % 60);
-    set('dayLabel', 'text', G.floor.key === 'penthouse' ? 'Пентхаус' : `День ${G.day} · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
-    $('dayLabel').classList.toggle('ot', !!G.overtime);
+    set('gameClock', 'text', `День ${G.day} · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
+    $('gameClock').hidden = G.floor.key === 'penthouse';
+    $('gameClock').classList.toggle('ot', !!G.overtime);
     const sig = (G.tickets || []).map(t => t.id + t.state + (G.selTicket === t)).join('|');
     if (set('tickets', 'sig', sig) || cache.ticketsHtml !== sig) {
       cache.ticketsHtml = sig;
       $('tickets').innerHTML = (G.tickets || []).map((t, i) => {
         const q = t.quest;
-        const cost = t.kind === 'normal' ? `<span class="tcost"><span class="e">⏱ ${EJ.fmtDur(EJ.workMinutes(q))}</span> · <span class="b">🔥${q.burnout}</span>${q.gold ? ` · <span class="g">${q.gold}◆</span>` : ''} · ${q.exp} XP</span>` : `<span class="tcost">${t.sub}</span>`;
+        const cost = t.kind === 'normal' ? `<span class="tcost"><span class="e">⏱ ${EJ.fmtDur(EJ.workMinutes(q))}</span> · <span class="b"><img class="burnout-icon" src="assets/ui/burnout.svg" alt="Выгорание">${q.burnout}</span>${q.gold ? ` · <span class="g">${q.gold}◆</span>` : ''} · ${q.exp} XP</span>` : `<span class="tcost">${t.sub}</span>`;
         return `<li class="${t.kind} ${t.state}${G.selTicket === t ? ' sel' : ''}" data-i="${i}"><span class="tid">${t.id}${t.kind === 'elite' ? ' · ЭЛИТА' : t.kind === 'boss' ? ' · БОСС' : ''}</span><span class="tname">${t.title}</span>${cost}<i class="tprog" style="width:0"></i></li>`;
       }).join('') || '<li class="done"><span class="tname">Тасок нет. Закрой день на месте 503.</span></li>';
     }
@@ -102,6 +117,8 @@ EJ.hud = (() => {
       const [x, y] = EJ.render.worldToCss(G.prompt.x, G.prompt.y, G.prompt.z || 40);
       pr.style.left = x + 'px'; pr.style.top = y + 'px';
       set('promptText', 'text', G.prompt.text);
+      pr.style.setProperty('--item-color', G.prompt.color || '');
+      $('promptText').style.color = G.prompt.color || '';
       pr.classList.add('show'); pr.classList.toggle('bad', !!G.prompt.bad);
     } else pr.classList.remove('show');
     // speech bubble follows its NPC
@@ -112,12 +129,19 @@ EJ.hud = (() => {
     } else sp.classList.remove('show');
 
     for (const k of Object.keys(timers)) if (timers[k] > 0 && (timers[k] -= dt) <= 0) ({ banner: () => $('banner').classList.remove('show'), toast: () => $('toast').classList.remove('show'), loot: () => $('lootCard').classList.remove('show'), speech: () => { speechTarget = null; } })[k]();
-    drawMinimap(G);
+    // the minimap only exists once the hero owns the smart watch
+    const hasMap = 'smartwatch' in P.inv;
+    $('minimap').parentElement.hidden = !hasMap;
+    if (hasMap) drawMinimap(G);
   }
 
   function bump(id) { const el = $(id).parentElement; el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
   function objective(text) { set('objMain', 'text', text); }
-  function floor(G) { set('floorName', 'text', `${G.floor.label} · ${G.floor.name}`); set('dept', 'text', G.floor.dept); }
+  function floor(G) {
+    const name = `${G.floor.label} · ${G.floor.name}`;
+    set('floorName', 'text', name);
+    $('floorName').title = name;
+  }
   function banner(title, sub = '', color = '#ff2d55', time = 2.2) {
     $('bannerTitle').textContent = title; $('bannerSub').textContent = sub;
     $('banner').style.setProperty('--bc', color); $('banner').classList.add('show'); timers.banner = time;
@@ -128,10 +152,10 @@ EJ.hud = (() => {
     const it = EJ.ITEMS[id], g = EJ.GRADES[grade];
     const v = Math.max(1, Math.round(it.value * g.mul));
     $('lootCard').style.setProperty('--lc', g.color);
-    $('lootIco').textContent = ICON[it.icon];
-    $('lootGrade').textContent = `${g.name} · ${it.type === 'A' ? 'активный [A]' : 'пассивный [P]'}`;
+    $('lootIco').innerHTML = itemIcon(it.icon);
+    $('lootGrade').textContent = it.type === 'A' ? 'активный [A]' : 'пассивный [P]';
     $('lootName').textContent = it.name;
-    $('lootText').textContent = got ? `${it.type === 'A' ? `Клавиша ${it.slot}: ` : ''}+${v} ${it.text}.${it.mod ? ' ⚙ ' + it.mod + '.' : ' ' + it.desc + '.'}` : 'Уже есть такой. Сдан на склад за золото.';
+    $('lootText').textContent = !got ? 'Уже есть такой. Сдан на склад за золото.' : id === 'smartwatch' ? EJ.watch.description(grade) : !it.stat ? `${it.desc}.` : `${it.type === 'A' ? `Клавиша ${it.slot}: ` : ''}+${v} ${it.text}.${it.mod ? ' ⚙ ' + it.mod + '.' : ' ' + it.desc + '.'}`;
     $('lootCard').classList.add('show'); timers.loot = 3.5;
   }
   function speech(npc, name, text, time = 4) { speechTarget = npc; $('speechName').textContent = name; $('speechText').textContent = text; timers.speech = time; }
@@ -156,10 +180,7 @@ EJ.hud = (() => {
     const offX = (mmW - (maxX - minX) * s) / 2 - minX * s, offY = (mmH - (maxY - minY) * s) / 2 - minY * s;
     const T = (x, y) => [offX + (x - y) * s, offY + ((x + y) / 2) * s];
     const diamond = (x, y, w, h) => { ctx.beginPath(); ctx.moveTo(...T(x, y)); ctx.lineTo(...T(x + w, y)); ctx.lineTo(...T(x + w, y + h)); ctx.lineTo(...T(x, y + h)); ctx.closePath(); };
-    const known = new Set();
-    for (const R of L.rooms) if (R.visited) { known.add(R.id); R.links.forEach(l => known.add(l)); }
-    // the badge shows the whole floor plan once you have it (canon: схема этажа на бейджике)
-    if (G.badgeMap) L.rooms.forEach(R => known.add(R.id));
+    const watchGrade = EJ.watch.grade(G.player), known = EJ.watch.knownRooms(G);
     ctx.lineWidth = Math.max(2, s * 1.6); ctx.strokeStyle = 'rgba(120,130,170,0.35)';
     for (const R of L.rooms) if (known.has(R.id)) for (const l of R.links) if (known.has(l)) { const Q = L.rooms[l]; ctx.beginPath(); ctx.moveTo(...T(R.ccx + 0.5, R.ccy + 0.5)); ctx.lineTo(...T(Q.ccx + 0.5, Q.ccy + 0.5)); ctx.stroke(); }
     const icon = (R, text, col) => { const [cx, cy] = T(R.cx, R.cy); ctx.fillStyle = col; ctx.font = `700 ${11 * dpr}px Oswald, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, cx, cy); };
@@ -173,14 +194,28 @@ EJ.hud = (() => {
       if (R.type === 'lift' || R.type === 'lobby') icon(R, '⇧', L.elevator && !L.elevator.locked ? '#4dff9a' : '#ff2d55');
       if (R.type === 'boss') icon(R, '☠', '#ff3df0');
       if (R.type === 'throne') icon(R, '♛', '#ffc04a');
-      if (R.incident && !R.cleared && R.visited) icon(R, '!', '#ff2d55');
+      if (watchGrade >= 2 && R.incident && !R.cleared && R.visited) icon(R, '!', '#ff2d55');
+    }
+    if (watchGrade >= 1) for (const d of L.doors) {
+      if (!L.rooms.some(R => known.has(R.id) && R.doors.includes(d))) continue;
+      const [x, y] = T(d.x + .5, d.y + .5);
+      ctx.fillStyle = d.locked || d.sealed ? '#ff2d55' : '#4dff9a';
+      ctx.fillRect(x - 2 * dpr, y - 1.5 * dpr, 4 * dpr, 3 * dpr);
     }
     for (const t of G.tickets || []) {
-      if (!t.target || t.state === 'done') continue;
+      if (!t.target || t.state === 'done' || !EJ.watch.canTrack(G, t.target.x + t.target.w / 2, t.target.y + t.target.d / 2)) continue;
       const [x, y] = T(t.target.x + t.target.w / 2, t.target.y + t.target.d / 2);
       ctx.fillStyle = t.kind === 'elite' ? '#b26bff' : t.kind === 'boss' ? '#ff2d55' : '#3fd8ff';
       const z = (G.selTicket === t ? 5 : 3.5) * dpr;
       ctx.beginPath(); ctx.moveTo(x, y - z); ctx.lineTo(x + z, y); ctx.lineTo(x, y + z); ctx.lineTo(x - z, y); ctx.closePath(); ctx.fill();
+    }
+    for (const e of G.enemies) {
+      if (e.dead || e.hp <= 0 || (!['guard', 'elite'].includes(e.type) && !e.patrol) || !EJ.watch.canTrack(G, e.x, e.y)) continue;
+      const [x, y] = T(e.x, e.y);
+      ctx.fillStyle = e.type === 'elite' ? '#b26bff' : '#ffb03a';
+      ctx.strokeStyle = '#090c14'; ctx.lineWidth = dpr;
+      ctx.beginPath(); ctx.moveTo(x, y - 4 * dpr); ctx.lineTo(x + 3.5 * dpr, y + 3 * dpr);
+      ctx.lineTo(x - 3.5 * dpr, y + 3 * dpr); ctx.closePath(); ctx.fill(); ctx.stroke();
     }
     const P = G.player, [px, py] = T(P.x, P.y);
     ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px, py, 3 * dpr, 0, Math.PI * 2); ctx.fill();
@@ -210,7 +245,8 @@ EJ.hud = (() => {
     $('invList').innerHTML = ids.map(id => {
       const it = EJ.ITEMS[id], g = EJ.GRADES[P.inv[id]];
       const v = Math.max(1, Math.round(it.value * g.mul));
-      return `<div style="--lc:${g.color}"><i>${ICON[it.icon]}</i><p style="margin:0"><b style="color:${g.color}">${it.name}</b><span>${it.stat ? `+${v} ${it.text}` : it.desc}${it.mod ? `<br>⚙ ${it.mod}` : ''}</span></p><em class="tag">${it.type === 'A' ? `A · ${it.slot}` : 'P'}</em></div>`;
+      const desc = id === 'smartwatch' ? EJ.watch.description(P.inv[id]) : it.stat ? `+${v} ${it.text}` : it.desc;
+      return `<div style="--lc:${g.color}"><i>${itemIcon(it.icon)}</i><p style="margin:0"><b style="color:${g.color}">${it.name}</b><span>${desc}${it.mod ? `<br>⚙ ${it.mod}` : ''}</span></p><em class="tag">${it.type === 'A' ? `A · ${it.slot}` : 'P'}</em></div>`;
     }).join('') || '<p class="muted">Пусто.</p>';
   }
 

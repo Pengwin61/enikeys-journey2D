@@ -88,8 +88,8 @@
     const P = G.player, it = EJ.ITEMS[id];
     if (!it) return false;
     if (id in P.inv) {
-      // duplicate: keep the better grade for actives, convert passives into gold
-      if (it.type === 'A' && grade > P.inv[id]) { P.inv[id] = grade; return true; }
+      // Actives and watches upgrade; other passive duplicates become gold.
+      if ((it.type === 'A' || id === 'smartwatch') && grade > P.inv[id]) { P.inv[id] = grade; return true; }
       const g = 5 + grade * 5; P.gold += g; fx.floater(G, P.x, P.y, `+${g} ◆`, '#ffd166');
       return false;
     }
@@ -768,7 +768,7 @@
         d.dead = true;
         if (d.kind === 'coin') { P.gold += d.value; G.stats.gold += d.value; sfx('coin'); fx.sparks(G, d.x, d.y, 6, '#ffd166', 4, 2, 0.2); }
         if (d.kind === 'pass') { P.passes++; sfx('pickup'); G.hud.banner('ПРОПУСК К БОССУ', `Пропусков: ${P.passes}`, '#9b5cff', 2); G.onPassPicked?.(); }
-        if (d.kind === 'item') { const got = giveItem(G, d.id, d.grade); G.hud.loot(d.id, d.grade, got); sfx('pickup'); }
+        if (d.kind === 'item') { const got = giveItem(G, d.id, d.grade); G.hud.loot(d.id, d.grade, got); sfx('pickup'); if (got && d.id === 'smartwatch') G.hud.banner('СМАРТ-ЧАСЫ ПОДКЛЮЧЕНЫ', EJ.watch.description(d.grade), EJ.GRADES[d.grade].color, 3.5); }
       }
       if (d.life <= 0) d.dead = true;
     }

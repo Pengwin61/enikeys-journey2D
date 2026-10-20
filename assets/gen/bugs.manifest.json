@@ -1,0 +1,93 @@
+{
+  "source": "concept/enemy_concept.png",
+  "format": "PNG",
+  "transparent": true,
+  "poses_per_enemy": 1,
+  "integrated": false,
+  "enemies": [
+    {
+      "id": "logkroh",
+      "name": "Логкрох",
+      "group": "small",
+      "painted": "assets/gen/painted/enemy/logkroh_front.png",
+      "pixel": "assets/gen/pixel/enemy/logkroh_front.png"
+    },
+    {
+      "id": "pingovik",
+      "name": "Пинговик",
+      "group": "small",
+      "painted": "assets/gen/painted/enemy/pingovik_front.png",
+      "pixel": "assets/gen/pixel/enemy/pingovik_front.png"
+    },
+    {
+      "id": "fayloed",
+      "name": "Файлоед",
+      "group": "small",
+      "painted": "assets/gen/painted/enemy/fayloed_front.png",
+      "pixel": "assets/gen/pixel/enemy/fayloed_front.png"
+    },
+    {
+      "id": "processik",
+      "name": "Процессик",
+      "group": "small",
+      "painted": "assets/gen/painted/enemy/processik_front.png",
+      "pixel": "assets/gen/pixel/enemy/processik_front.png"
+    },
+    {
+      "id": "portokrys",
+      "name": "Портокрыс",
+      "group": "small",
+      "painted": "assets/gen/painted/enemy/portokrys_front.png",
+      "pixel": "assets/gen/pixel/enemy/portokrys_front.png"
+    },
+    {
+      "id": "keshling",
+      "name": "Кэшлинг",
+      "group": "small",
+      "painted": "assets/gen/painted/enemy/keshling_front.png",
+      "pixel": "assets/gen/pixel/enemy/keshling_front.png"
+    },
+    {
+      "id": "konfigor",
+      "name": "Конфигор",
+      "group": "medium",
+      "painted": "assets/gen/painted/enemy/konfigor_front.png",
+      "pixel": "assets/gen/pixel/enemy/konfigor_front.png"
+    },
+    {
+      "id": "deploit",
+      "name": "Деплоит",
+      "group": "medium",
+      "painted": "assets/gen/painted/enemy/deploit_front.png",
+      "pixel": "assets/gen/pixel/enemy/deploit_front.png"
+    },
+    {
+      "id": "dedlok",
+      "name": "Дедлок",
+      "group": "medium",
+      "painted": "assets/gen/painted/enemy/dedlok_front.png",
+      "pixel": "assets/gen/pixel/enemy/dedlok_front.png"
+    },
+    {
+      "id": "utechka",
+      "name": "Утечка",
+      "group": "medium",
+      "painted": "assets/gen/painted/enemy/utechka_front.png",
+      "pixel": "assets/gen/pixel/enemy/utechka_front.png"
+    },
+    {
+      "id": "brandmauzer",
+      "name": "Брандмаузер",
+      "group": "medium",
+      "painted": "assets/gen/painted/enemy/brandmauzer_front.png",
+      "pixel": "assets/gen/pixel/enemy/brandmauzer_front.png"
+    },
+    {
+      "id": "konteynertus",
+      "name": "Контейнертус",
+      "group": "medium",
+      "painted": "assets/gen/painted/enemy/konteynertus_front.png",
+      "pixel": "assets/gen/pixel/enemy/konteynertus_front.png"
+    }
+  ]
+}

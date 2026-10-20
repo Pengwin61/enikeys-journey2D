@@ -20,9 +20,9 @@ EJ.render = (() => {
     W = Math.ceil(wd / scale); H = Math.ceil(hd / scale);
     display.width = W * scale; display.height = H * scale;
     display.style.width = (W * scale) / dpr + 'px'; display.style.height = (H * scale) / dpr + 'px';
-    // the scene is rendered at RES× its logical size so painted assets keep their detail;
-    // RES divides the display scale, so procedural pixel art stays perfectly crisp
-    RES = [3, 2, 1].find(r => scale % r === 0);
+    // Render to native display pixels. Pixel primitives retain their logical
+    // grid, while SVG wall logos avoid a destructive downsample/upscale pass.
+    RES = scale;
     scene = canvas(W * RES, H * RES); sc = scene.getContext('2d');
     glow = canvas(W, H); gc = glow.getContext('2d');
     b1 = canvas(W / 2, H / 2); b2 = canvas(W / 4, H / 4); b3 = canvas(W / 8, H / 8);
@@ -105,28 +105,18 @@ EJ.render = (() => {
   }
 
   // ---------------------------------------------------------------- ground layer
+  let shadowBlobC = null;
+  function shadowBlob() {
+    if (shadowBlobC) return shadowBlobC;
+    shadowBlobC = canvas(64, 32);
+    const g = shadowBlobC.getContext('2d');
+    const grd = g.createRadialGradient(32, 16, 0, 32, 16, 32);
+    grd.addColorStop(0, 'rgba(0,0,0,0.7)'); grd.addColorStop(0.55, 'rgba(0,0,0,0.4)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.setTransform(1, 0, 0, 0.5, 0, 8); g.fillStyle = grd; g.fillRect(0, -16, 64, 64);
+    return shadowBlobC;
+  }
   function drawGround(G) {
     const P = G.player;
-    // neon guide thread to the selected ticket (prologue: «неоновая нить потянулась вперёд»)
-    if (G.thread && G.thread.length > 1 && P.alive) {
-      const pts = G.thread;
-      const col = G.threadColor || '#3fd8ff';
-      let acc = 0;
-      for (let i = 1; i < pts.length; i++) {
-        const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
-        for (let s = 0; s < 4; s++) {
-          acc++;
-          const t = s / 4, x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
-          const phase = (acc - time * 10) % 6;
-          if (phase < 0 ? phase + 6 < 2.5 : phase < 2.5) {
-            const X = Math.round(sx(x, y)), Y = Math.round(sy(x, y));
-            const a = Math.max(0.15, 1 - i / 40);
-            sc.fillStyle = rgba(col, 0.75 * a); sc.fillRect(X - 1, Y, 2, 1);
-            gc.fillStyle = rgba(col, 0.9 * a); gc.fillRect(X - 1, Y, 3, 1);
-          }
-        }
-      }
-    }
     // scan cone (Найти уязвимость)
     if (G.scanFx) {
       const f = G.scanFx, a = f.t / 0.35;
@@ -168,6 +158,19 @@ EJ.render = (() => {
       }
     }
     const shadow = (x, y, r, a = 0.45) => groundEllipse(sc, sx(x, y), sy(x, y), r, `rgba(0,0,0,${a})`);
+    // contact shadows under painted props so they sit on the floor instead of hovering:
+    // a soft dark blob sized to the drawn art, plus a tight occlusion under the footprint
+    for (const p of G.L.props) {
+      const art = propArt(p);
+      if (!art) continue;
+      const bx = sx(p.x + p.w / 2, p.y + p.d / 2), by = sy(p.x + p.w, p.y + p.d) + 2;
+      if (bx < -60 || bx > W + 60 || by < -40 || by > H + 80) continue;
+      const fitH = art.h * ((p.w + p.d) * 16 * 1.12) / art.w, h = Math.min(fitH, ART_MAX_H[p.kind] || 1e9);
+      const wpx = art.w * h / art.h;
+      const rw = wpx * 1.15, rh = wpx * 0.58;
+      sc.drawImage(shadowBlob(), bx - rw / 2, by - wpx * 0.3 - rh / 2, rw, rh);
+      poly(sc, [sx(p.x, p.y), sy(p.x, p.y), sx(p.x + p.w, p.y), sy(p.x + p.w, p.y), sx(p.x + p.w, p.y + p.d), sy(p.x + p.w, p.y + p.d), sx(p.x, p.y + p.d), sy(p.x, p.y + p.d)], 'rgba(0,0,0,0.35)');
+    }
     for (const e of G.enemies) {
       if (e.spawnT > 0 || e.type === 'head') continue;
       const big = e.def.r > 0.5;
@@ -179,10 +182,14 @@ EJ.render = (() => {
     if (P.alive) {
       shadow(P.x, P.y, 0.3, 0.5);
       const x = sx(P.x, P.y), y = sy(P.x, P.y);
-      groundEllipse(sc, x, y, 0.5, 'rgba(255,140,70,0.55)', 1);
-      groundEllipse(gc, x, y, 0.5, 'rgba(255,120,60,0.35)', 1);
+      const ringArt = EJ.assets.get('player_ring');
+      if (ringArt) drawArt(ringArt, x, y + 6, 12, false, 0.9, false);
+      else {
+        groundEllipse(sc, x, y, 0.5, 'rgba(255,140,70,0.6)', 0.8);
+        groundEllipse(gc, x, y, 0.5, 'rgba(255,120,60,0.35)', 1);
+      }
       const ax = x + (P.aimX - P.aimY) * 0.5 * 16, ay = y + (P.aimX + P.aimY) * 0.5 * 8;
-      sc.fillStyle = '#ffd0a0'; sc.fillRect(Math.round(ax) - 1, Math.round(ay), 2, 1);
+      sc.fillStyle = '#ffd0a0'; sc.beginPath(); sc.arc(ax, ay, 0.9, 0, Math.PI * 2); sc.fill();
     }
   }
 
@@ -273,27 +280,69 @@ EJ.render = (() => {
 
     for (const it of items) {
       switch (it.k) {
-        case 0: sc.globalAlpha = it.o.fade; sc.drawImage(it.o.img, it.x, it.y); sc.globalAlpha = 1; break;
+        case 0: drawWall(it.o, it.x, it.y, G); break;
         case 1: drawProp(G, it.o, it.x, it.y); break;
         case 2: drawBarrier(G, it.o); break;
         case 4: drawDrop(it.o); break;
         case 5: drawEnemy(G, it.o); break;
         case 6: drawNpc(G, it.o); break;
         case 7: drawBullet(it.o); break;
-        case 8: { const a = it.o; sprite(S().hero[a.facing][0], sx(a.x, a.y), sy(a.x, a.y), a.flip, { silhouette: true, alpha: a.t / 0.22 }); break; }
+        case 8: { const a = it.o; heroGhost(a.facing, sx(a.x, a.y), sy(a.x, a.y), a.flip, a.t / 0.22); break; }
         case 9: drawPlayer(G, P); break;
         case 10: drawTicketMarker(G, it.o); break;
         case 11: drawAlly(it.o); break;
       }
     }
-    if (P.alive && occluded) sprite(heroSprite(P), sx(P.x, P.y), sy(P.x, P.y), P.flip, { silhouette: true, alpha: 0.35 });
+    if (P.alive && occluded) heroGhost(P.facing, sx(P.x, P.y), sy(P.x, P.y), P.flip, 0.35);
+  }
+
+  let hiWalls = 0;
+  function drawWall(wall, x, y, G) {
+    sc.save(); sc.globalAlpha = wall.fade;
+    if (wall.deco && RES > 1) {
+      // painted walls are rebuilt at device resolution once, so the texture stays sharp
+      if (!wall.hi || wall.hiRes !== RES) {
+        if (hiWalls > 500) { for (const w of G.L.walls) w.hi = null; hiWalls = 0; }
+        wall.hi = EJ.level.buildHiWall(G.L, wall, RES); wall.hiRes = RES; hiWalls++;
+      }
+      sc.setTransform(1, 0, 0, 1, 0, 0);
+      sc.drawImage(wall.hi, Math.round(x * RES), Math.round(y * RES));
+      sc.setTransform(RES, 0, 0, RES, 0, 0);
+    } else sc.drawImage(wall.img, x, y);
+    if (wall.neon) {
+      const n = wall.neon, col = EJ.assets.pillarColor(G);
+      sc.save(); sc.transform(1, n.slope, 0, 1, ox + n.x, oy + n.y);
+      if (wall.deco) { sc.fillStyle = '#0b121c'; sc.fillRect(5.5, 5.5, 5, EJ.level.WALL_H - 11); sc.fillStyle = 'rgba(120,140,170,0.35)'; sc.fillRect(5.5, 5.5, 5, 0.5); }
+      sc.fillStyle = col; sc.fillRect(7, 7, 2, EJ.level.WALL_H - 14);
+      sc.fillStyle = EJ.assets.pillarNight(G) ? '#ffd0da' : '#c4eeff';
+      sc.fillRect(7, 9, 1, EJ.level.WALL_H - 18); sc.restore();
+      gc.save(); gc.globalAlpha = wall.fade * .5 * (1 - (G?.blackout || 0) * .95);
+      gc.transform(1, n.slope, 0, 1, ox + n.x, oy + n.y);
+      gc.fillStyle = col; gc.fillRect(7, 7, 2, EJ.level.WALL_H - 14); gc.restore();
+    }
+    if (wall.signs && wall.signs.length) {
+      // Clip each decal to the same depth-sorted wall slice as its mounting
+      // plate. Foreground actors/props still cover it and wall fades still work.
+      sc.beginPath();
+      for (let i = 0; i < wall.clip.length; i += 2) {
+        if (i === 0) sc.moveTo(x + wall.clip[i], y + wall.clip[i + 1]);
+        else sc.lineTo(x + wall.clip[i], y + wall.clip[i + 1]);
+      }
+      sc.closePath(); sc.clip();
+      for (const sign of wall.signs) {
+        sc.save(); sc.transform(1, sign.slope, 0, 1, ox + sign.x, oy + sign.y);
+        EJ.brand.drawSign(sc, sign.u, sign.v, sign.w, sign.h, { color: sign.color, background: false });
+        sc.restore();
+      }
+    }
+    sc.restore();
   }
 
   // ---------------------------------------------------------------- painted assets (assets/gen, optional)
   const HERO_H = 34, ART_SCALE = 32 / 256;
   // tall art is capped so it stays in proportion with the 50 px walls
-  const ART_MAX_H = { pillar: 66, rack: 54, cabinet: 32, cooler: 28, vending: 50, kiosk: 26, ups: 26, router: 22 };
-  const propArt = p => EJ.assets.forProp(p);
+  const ART_MAX_H = { pillar: 66, rack: 54, cabinet: 32, cooler: 28, vending: 50, kiosk: 26, ups: 26, router: 22, printer: 40, secdoor: 58 };
+  const propArt = (p, G) => EJ.assets.forProp(p, G);
   // painted art is pre-scaled once per on-screen size and cached, then blitted 1:1 in device pixels
   const artCache = new Map();
   function scaledArt(a, h, flip) {
@@ -325,6 +374,30 @@ EJ.render = (() => {
     sc.globalAlpha = 1;
     sc.setTransform(RES, 0, 0, RES, 0, 0);
   }
+  // Small assets stay sharp in native pixels; coin width can animate without
+  // resampling the source PNG on every frame.
+  function drawScaledSprite(img, cx, bottom, alpha = 1, widthFactor = 1) {
+    const w = Math.max(1, Math.round(img.width * widthFactor));
+    sc.setTransform(1, 0, 0, 1, 0, 0); sc.globalAlpha = alpha;
+    sc.drawImage(img, Math.round(cx * RES - w / 2), Math.round(bottom * RES - img.height), w, img.height);
+    sc.globalAlpha = 1; sc.setTransform(RES, 0, 0, RES, 0, 0);
+  }
+  const markerCache = new WeakMap();
+  function coloredMarker(a, height, color) {
+    const base = scaledArt(a, height, false), key = `${base.height}:${color}`;
+    let variants = markerCache.get(a);
+    if (!variants) { variants = new Map(); markerCache.set(a, variants); }
+    let img = variants.get(key);
+    if (!img) {
+      img = canvas(base.width, base.height); const g = img.getContext('2d');
+      g.drawImage(base, 0, 0); g.globalCompositeOperation = 'multiply';
+      g.fillStyle = color; g.fillRect(0, 0, img.width, img.height);
+      g.globalCompositeOperation = 'destination-in'; g.drawImage(base, 0, 0);
+      if (variants.size > 24) variants.clear();
+      variants.set(key, img);
+    }
+    return img;
+  }
   let floorTileC = null, floorTileRes = 0;
   function drawAssetFloor(L) {
     const tile = EJ.assets.get('floor_tile');
@@ -347,6 +420,22 @@ EJ.render = (() => {
     sc.globalCompositeOperation = 'lighter';
     blitRegion(sc, L.poolCanvas, L.FOX, L.FOY);
     sc.globalCompositeOperation = 'source-over';
+  }
+
+  // see-through hero (behind walls) and dash afterimages: a cyan silhouette of the painted art
+  const ghostCache = new Map();
+  function heroGhost(facing, x, y, flip, alpha) {
+    const art = EJ.assets.get(facing === 'front' ? 'enikey_front' : 'enikey_back');
+    if (!art) { sprite(S().hero[facing][0], x, y, flip, { silhouette: true, alpha }); return; }
+    const f = facing === 'front' ? !flip : flip;
+    const base = scaledArt(art, HERO_H, f), key = base;
+    let g = ghostCache.get(key);
+    if (!g) {
+      g = canvas(base.width, base.height); const c = g.getContext('2d');
+      c.drawImage(base, 0, 0); c.globalCompositeOperation = 'source-in'; c.fillStyle = 'rgba(120,230,255,0.75)'; c.fillRect(0, 0, g.width, g.height);
+      if (ghostCache.size > 16) ghostCache.clear(); ghostCache.set(key, g);
+    }
+    drawScaledSprite(g, x, y, alpha);
   }
 
   function heroSprite(P) { return S().hero[P.facing][P.moving ? 1 + (Math.floor(P.anim) % 2) : 0]; }
@@ -374,12 +463,6 @@ EJ.render = (() => {
       groundEllipse(sc, x, y, 0.9 - 0.4 * k, col, 1); groundEllipse(gc, x, y, 0.9 - 0.4 * k, col, 1);
       if (k >= 1) pushLight(P.x, P.y, 'rgba(183,255,106,0.4)', 1.4);
     }
-    if (P.workT > 0) {
-      const X = Math.round(x), Y = Math.round(y - 32);
-      sc.fillStyle = '#05070c'; sc.fillRect(X - 9, Y - 1, 18, 4);
-      sc.fillStyle = '#3fd8ff'; sc.fillRect(X - 8, Y, Math.round(16 * P.workP), 2);
-      gc.fillStyle = '#3fd8ff'; gc.fillRect(X - 8, Y, Math.round(16 * P.workP), 2);
-    }
   }
   function reticle(X, Y, col) {
     X = Math.round(X); Y = Math.round(Y);
@@ -395,36 +478,89 @@ EJ.render = (() => {
     const X = Math.round(sx(cx, cy)), Y = Math.round(sy(cx, cy, p.h + 20 + Math.sin(time * 3 + cx) * 2));
     const col = t.kind === 'elite' ? '#b26bff' : t.kind === 'boss' ? '#ff2d55' : '#3fd8ff';
     const sel = G.selTicket === t;
-    const s = sel ? 4 : 3;
-    // diamond with a pulsing core (prologue marker)
-    for (const ctx of [sc, gc]) {
-      ctx.fillStyle = col;
-      for (let r = -s; r <= s; r++) { const hw = s - Math.abs(r); ctx.fillRect(X - hw, Y + r, hw * 2 + 1, 1); }
+    const markerH = sel ? 16 : 12, bottom = Y + markerH / 2;
+    const art = EJ.assets.get('quest_marker');
+    if (art) drawScaledSprite(coloredMarker(art, markerH, col), X, bottom, sel ? 1 : .8);
+    else {
+      // Missing-art mode still uses an unmistakable exclamation, not a reticle.
+      sc.fillStyle = '#0b111b'; sc.fillRect(X - 3, Y - 6, 7, 11);
+      line(sc, X - 3, Y - 6, X - 3, Y + 4, col); line(sc, X + 3, Y - 6, X + 3, Y + 4, col);
+      line(sc, X - 3, Y - 6, X + 3, Y - 6, col);
+      line(sc, X - 3, Y + 4, X, Y + 7, col); line(sc, X, Y + 7, X + 3, Y + 4, col);
+      sc.fillStyle = col; sc.fillRect(X, Y - 4, 1, 5); sc.fillRect(X, Y + 2, 1, 1);
     }
-    const core = Math.floor(time * 4) % 2 ? '#ffffff' : col;
-    sc.fillStyle = core; sc.fillRect(X, Y - 1, 1, 3); sc.fillRect(X - 1, Y, 3, 1);
-    sc.fillStyle = '#05060a';
-    for (let r = -(s - 1); r <= s - 1; r++) { const hw = s - 1 - Math.abs(r); if (hw > 0 && Math.abs(r) > 0) { sc.fillRect(X - hw, Y + r, 1, 1); sc.fillRect(X + hw, Y + r, 1, 1); } }
-    line(gc, X, Y + s + 1, X, Math.round(sy(cx, cy, p.h)), rgba(col, 0.25));
+    line(gc, X, bottom + 1, X, Math.round(sy(cx, cy, p.h)), rgba(col, 0.2));
     if (t.progress > 0 && t.state !== 'done') {
-      sc.fillStyle = '#05070c'; sc.fillRect(X - 11, Y + 7, 22, 4);
-      sc.fillStyle = col; sc.fillRect(X - 10, Y + 8, Math.round(20 * t.progress), 2);
-      gc.fillStyle = col; gc.fillRect(X - 10, Y + 8, Math.round(20 * t.progress), 2);
+      const barY = bottom + 4;
+      sc.fillStyle = 'rgba(5,7,12,0.9)'; sc.fillRect(X - 10.5, barY, 21, 2.5);
+      sc.fillStyle = col; sc.fillRect(X - 10, barY + 0.5, 20 * t.progress, 1.5);
+      gc.fillStyle = col; gc.fillRect(X - 10, barY + 0.5, 20 * t.progress, 1.5);
     }
     pushLight(cx, cy + 0.6, rgba(col, 0.25), 1.2);
   }
 
+  const dimDeskLampCache = new WeakMap();
+  function dimDeskLamp(art) {
+    let dim = dimDeskLampCache.get(art);
+    if (!dim) {
+      const img = canvas(art.w, art.h), g = img.getContext('2d');
+      g.drawImage(art.img, art.x, art.y, art.w, art.h, 0, 0, img.width, img.height);
+      // Darken the existing diffuser and its spill with soft masks. Never
+      // draw a replacement shape over the small, angled painted light strip.
+      g.save(); g.scale(img.width, img.height); g.globalCompositeOperation = 'multiply';
+      for (const [u, v, r, strength] of [[.33, .06, .10, .85], [.28, .27, .19, .55]]) {
+        const mask = g.createRadialGradient(u, v, 0, u, v, r);
+        mask.addColorStop(0, `rgba(0,0,0,${strength})`);
+        mask.addColorStop(.45, `rgba(0,0,0,${strength * .7})`);
+        mask.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = mask; g.fillRect(0, 0, 1, 1);
+      }
+      g.restore();
+      g.globalCompositeOperation = 'destination-in';
+      g.drawImage(art.img, art.x, art.y, art.w, art.h, 0, 0, img.width, img.height);
+      dim = { img, x: 0, y: 0, w: art.w, h: art.h };
+      dimDeskLampCache.set(art, dim);
+    }
+    return dim;
+  }
+
   function drawProp(G, p, x, y) {
-    const art = propArt(p);
+    const baseArt = propArt(p, G);
+    const lampOn = (time % 1.6) < .18 || ((time % 1.6) > .36 && (time % 1.6) < .5);
+    const art = baseArt && p.seat === 503 && !lampOn ? dimDeskLamp(baseArt) : baseArt;
+    let artLayout;
     if (art) {
       // painted asset: bottom of the art sits on the footprint's lowest corner, scaled 1 tile = 256 px
-      const bx = sx(p.x + p.w / 2, p.y + p.d / 2), by = sy(p.x + p.w, p.y + p.d) + 1;
+      const bx = sx(p.x + p.w / 2, p.y + p.d / 2), by = sy(p.x + p.w, p.y + p.d) + 2;
       // fit the art's width to the footprint's iso width (+12% for overhangs)
       const fitH = art.h * ((p.w + p.d) * 16 * 1.12) / art.w;
-      drawArt(art, bx, by, Math.min(fitH, ART_MAX_H[p.kind] || 1e9), false, p.fade ?? 1, false);
+      const artH = Math.min(fitH, ART_MAX_H[p.kind] || 1e9);
+      // The supplied door faces the west wall; mirror it for the north wall.
+      const flip = p.kind === 'secdoor' && p.wallSide !== 'w';
+      artLayout = { x: bx, bottom: by, h: artH, w: artH * art.w / art.h, flip };
+      drawArt(art, bx, by, artH, flip, p.fade ?? 1, false);
+      // Non-destructive corporate decals on the existing art in either style.
+      if (p.kind === 'crate' || p.kind === 'kiosk') {
+        const crate = p.kind === 'crate', artW = artH * art.w / art.h;
+        sc.save(); sc.globalAlpha = (p.fade ?? 1) * .85;
+        sc.translate(bx + (crate ? artW * .14 : -artW * .04), by - artH * (crate ? .33 : .22));
+        sc.transform(1, crate ? -.5 : .5, 0, 1, 0, 0);
+        const markH = Math.min(crate ? 7 : 5, artH * .25);
+        EJ.brand.drawMark(sc, -markH * .4, -markH, markH * .8, markH, crate ? EJ.brand.palette.ink : EJ.brand.palette.ivory, EJ.assets.style === 'pixel');
+        sc.restore();
+      }
     } else {
       sc.globalAlpha = p.fade ?? 1;
       sc.drawImage(p.img, x, y);
+      if (p.kind === 'pillar') {
+        const col = EJ.assets.pillarColor(G), core = EJ.assets.pillarNight(G) ? '#ffd3da' : '#b9eeff';
+        for (const [wx, wy] of [[p.x + .5, p.y + p.d], [p.x + p.w, p.y + .5]]) {
+          const X = sx(wx, wy), Y = sy(wx, wy);
+          line(sc, X, Y - 4, X, Y - p.h + 4, col);
+          line(gc, X, Y - 4, X, Y - p.h + 4, rgba(col, .55 * (p.fade ?? 1)));
+          line(sc, X + 1, Y - 8, X + 1, Y - p.h + 8, core);
+        }
+      }
       sc.globalAlpha = 1;
     }
     if (p.leds && !art) for (const [lx, ly, col, ph, rate] of p.leds) if (Math.sin(time * rate + ph) > -0.2) { sc.fillStyle = col; sc.fillRect(x + lx, y + ly, 1, 1); gc.fillStyle = col; gc.fillRect(x + lx, y + ly, 2, 1); }
@@ -432,18 +568,46 @@ EJ.render = (() => {
       if (it.sold) return;
       const col = EJ.GRADES[it.grade].color;
       const wx2 = sx(p.x + 0.4 + i * 0.8, p.y + 0.3), wy2 = sy(p.x + 0.4 + i * 0.8, p.y + 0.3, p.h + 10 + Math.sin(time * 2.5 + i) * 2);
-      sprite(S().ITEMBOX, wx2, wy2, false);
+      const boxArt = EJ.assets.get('item_box');
+      if (boxArt) drawArt(boxArt, wx2, wy2, 10, false, 1, false); else sprite(S().ITEMBOX, wx2, wy2, false);
       gc.fillStyle = rgba(col, 0.6); gc.fillRect(Math.round(wx2) - 5, Math.round(wy2) - 9, 10, 9);
       pushLight(p.x + 0.4 + i * 0.8, p.y + 0.9, rgba(col, 0.35), 1);
     });
     if (p.seat === 503) {
-      // the lamp above seat 503 blinks in a steady, measured rhythm — it is transmitting
-      const on = (time % 1.6) < 0.18 || ((time % 1.6) > 0.36 && (time % 1.6) < 0.5);
-      if (on) pushLight(p.x + 0.9, p.y + 0.9, 'rgba(160,220,255,0.55)', 2.2);
-      const X = Math.round(sx(p.x + 0.9, p.y + 0.45)), Y = Math.round(sy(p.x + 0.9, p.y + 0.45, 44));
-      sc.fillStyle = on ? '#e9f8ff' : '#3a4050'; sc.fillRect(X - 4, Y, 9, 1);
-      if (on) { gc.fillStyle = '#9fd8ff'; gc.fillRect(X - 5, Y - 1, 11, 3); }
-      line(sc, X, Y, X, Y - 18, '#1b1d27');
+      // The unmodified painted lamp is the bright phase; only its soft light
+      // pool is added dynamically, without a low-resolution white overlay.
+      if (artLayout && lampOn) {
+        const lx = artLayout.x + (.33 - .5) * artLayout.w;
+        const ly = artLayout.bottom - (1 - .065) * artLayout.h;
+        pushLightPx(lx, ly, 'rgba(160,220,255,0.55)', 1.2);
+      }
+    }
+    if (p.kind === 'secdoor' && art) {
+      const night = !!G.patrol;
+      // Mount the indicator inside the asset's header, using its actual scale.
+      const lx = artLayout.x + (artLayout.flip ? -.09 : .09) * artLayout.w;
+      const ly = artLayout.bottom - artLayout.h * .76;
+      const on = night && Math.floor(time * 4) % 2 === 0;
+      const lamp = night ? (on ? '#ff2d55' : '#7a0f22') : 'rgba(255,176,58,0.55)';
+      sc.fillStyle = lamp; sc.beginPath(); sc.ellipse(lx, ly, 2.5, 1.4, 0, 0, Math.PI * 2); sc.fill();
+      gc.fillStyle = lamp; gc.beginPath(); gc.ellipse(lx, ly, 3.5, 2, 0, 0, Math.PI * 2); gc.fill();
+      if (on) pushLight(p.x + p.w / 2, p.y + p.d + 0.8, 'rgba(255,45,85,0.55)', 2.6);
+    } else if (p.kind === 'secdoor' && p.frame) {
+      const night = !!G.patrol, f = p.frame;
+      if (night) {
+        // open doorway while guards come out, red rotating lamp above
+        if (p.openT > 0) poly(sc, [f.a, f.b, f.c, f.d].flatMap(([u, v]) => [x + u, y + v]), '#07080c');
+        const on = Math.floor(time * 4) % 2 === 0;
+        const [lx, ly] = f.lamp;
+        for (const ctx of [sc, gc]) { ctx.fillStyle = on ? '#ff2d55' : '#7a0f22'; ctx.fillRect(Math.round(x + lx) - 2, Math.round(y + ly) - 2, 5, 3); }
+        if (on) pushLight(p.x + p.w / 2, p.y + p.d + 0.8, 'rgba(255,45,85,0.55)', 2.6);
+      } else {
+        const [lx, ly] = f.lamp;
+        sc.fillStyle = '#3a2a10'; sc.fillRect(Math.round(x + lx) - 2, Math.round(y + ly) - 2, 5, 3);
+        gc.fillStyle = 'rgba(255,176,58,0.35)'; gc.fillRect(Math.round(x + lx) - 2, Math.round(y + ly) - 2, 5, 3);
+      }
+      const [rx, ry] = f.reader;
+      for (const ctx of [sc, gc]) { ctx.fillStyle = night ? '#ff2d55' : '#4dff9a'; ctx.fillRect(Math.round(x + rx), Math.round(y + ry) - 2, 1, 1); }
     }
     if (p.kind === 'elevator') {
       const f = p.frame, col = p.locked ? '#ff2d55' : '#4dff9a';
@@ -484,13 +648,21 @@ EJ.render = (() => {
     const x = sx(d.x, d.y), y = sy(d.x, d.y, d.z + 3 + (d.vz === 0 ? Math.sin(time * 5 + d.x * 3) : 0));
     if (d.life < 3 && Math.floor(time * 10) % 2) return;
     if (d.kind === 'coin') {
-      const spr = S().COIN, w = Math.max(1, Math.round(Math.abs(Math.cos(time * 5 + d.x * 4)) * spr.w));
-      sc.drawImage(spr.img, Math.round(x - w / 2), Math.round(y - spr.h), w, spr.h);
-      gc.globalAlpha = 0.5; gc.drawImage(spr.img, Math.round(x - w / 2), Math.round(y - spr.h), w, spr.h); gc.globalAlpha = 1;
+      const art = EJ.assets.get('coin_token');
+      const spin = Math.max(.15, Math.abs(Math.cos(time * 5 + d.x * 4)));
+      if (art) {
+        drawScaledSprite(scaledArt(art, 8, false), x, y, 1, spin);
+        gc.fillStyle = 'rgba(255,190,70,.3)'; gc.fillRect(Math.round(x - 1), Math.round(y - 4), 2, 2);
+      } else {
+        const spr = S().COIN, w = Math.max(1, Math.round(spin * spr.w));
+        sc.drawImage(spr.img, Math.round(x - w / 2), Math.round(y - spr.h), w, spr.h);
+        gc.globalAlpha = 0.5; gc.drawImage(spr.img, Math.round(x - w / 2), Math.round(y - spr.h), w, spr.h); gc.globalAlpha = 1;
+      }
     } else if (d.kind === 'item') {
       const col = EJ.GRADES[d.grade].color;
       groundEllipse(sc, sx(d.x, d.y), sy(d.x, d.y), 0.35, rgba(col, 0.7), 1); groundEllipse(gc, sx(d.x, d.y), sy(d.x, d.y), 0.35, rgba(col, 0.8), 1);
-      sprite(S().ITEMBOX, x, y - 2, false);
+      const boxArt = EJ.assets.get('item_box');
+      if (boxArt) drawArt(boxArt, x, y - 1, 10, false, 1, false); else sprite(S().ITEMBOX, x, y - 2, false);
       gc.fillStyle = rgba(col, 0.6); gc.fillRect(Math.round(x) - 5, Math.round(y) - 11, 10, 9);
       line(gc, x, y - 12, x, y - 26, rgba(col, 0.4));
       pushLight(d.x, d.y, rgba(col, 0.45), 1.3);
@@ -539,6 +711,13 @@ EJ.render = (() => {
       const art = EJ.assets.get(pose) || EJ.assets.get('gregor_front');
       if (art) { drawArt(art, x, y, HERO_H, faceFront ? P.x - P.y > n.x - n.y : false, Math.min(1, alpha + 0.15), false); pushLight(n.x, n.y, 'rgba(90,160,255,0.35)', 1.5); return; }
     }
+    if (n.kind === 'paul') {
+      // painted Paul: lectures while talking, now and then lights up the Rust staff
+      const cast = (time + n.x) % 11 < 1.2;
+      const pose = !faceFront ? 'paul_back' : n.say > 0 ? 'paul_talk' : cast ? 'paul_cast' : 'paul_front';
+      const art = EJ.assets.get(pose) || EJ.assets.get('paul_front');
+      if (art) { drawArt(art, x, y, HERO_H * (art.h > 380 ? art.h / 362 : 1.15), faceFront ? P.x - P.y > n.x - n.y : false, 1, false); pushLight(n.x, n.y, `rgba(255,138,42,${cast ? 0.6 : 0.35})`, cast ? 2.4 : 1.6); return; }
+    }
     const spr = S()[n.kind][0];
     sprite(spr, x, y + (n.kind === 'paul' ? Math.round(Math.sin(time * 2) - 1) : 0), flip, { alpha });
     if (n.kind === 'paul') pushLight(n.x, n.y, 'rgba(255,138,42,0.3)', 1.3);
@@ -566,13 +745,17 @@ EJ.render = (() => {
       case 'spirit': sprite(S().spirit[0], x, y, flip, { flash, alpha: 0.55 + Math.sin(e.anim * 3) * 0.15 }); pushLight(e.x, e.y, 'rgba(127,196,255,0.3)', 1.2); break;
       case 'guard': {
         const wind = e.state === 'wind';
-        sprite(S().guard[e.state === 'charge' ? 1 : walkF], x + (wind ? Math.round(Math.sin(time * 60)) : 0), y, flip, { flash: flash || (wind && Math.floor(time * 14) % 2 === 0) });
+        const gArt = EJ.assets.get('guard_front'), gx = x + (wind ? Math.round(Math.sin(time * 60)) : 0), gFlash = flash || (wind && Math.floor(time * 14) % 2 === 0);
+        if (gArt) { drawArt(gArt, gx, y + (e.moving ? -Math.abs(Math.round(Math.sin(e.anim * 9))) : 0), HERO_H * 1.08, !flip, 1, gFlash); if (e.patrol || e.state === 'charge') pushLight(e.x, e.y, 'rgba(255,36,69,0.35)', 1.4); }
+        else sprite(S().guard[e.state === 'charge' ? 1 : walkF], gx, y, flip, { flash: gFlash });
         if (e.state === 'stun') for (let i = 0; i < 3; i++) { const a = time * 5 + (i * Math.PI * 2) / 3; sc.fillStyle = '#ffd27a'; sc.fillRect(Math.round(x + Math.cos(a) * 6), Math.round(y - 27 + Math.sin(a) * 2), 1, 1); }
         break;
       }
       case 'cultist':
         if (e.state === 'cast') { groundEllipse(sc, sx(e.x, e.y), sy(e.x, e.y), 0.6, rgba('#ff2a4f', 0.7), 1); pushLight(e.x, e.y, 'rgba(255,42,79,0.7)', 2); }
-        sprite(S().cultist[0], x, y, flip, { flash, glowA: e.state === 'cast' ? 1.6 : 1 });
+        { const cArt = EJ.assets.get('cultist_front');
+          if (cArt) drawArt(cArt, x, y, HERO_H * 1.05, !flip, 1, flash);
+          else sprite(S().cultist[0], x, y, flip, { flash, glowA: e.state === 'cast' ? 1.6 : 1 }); }
         break;
       case 'drone': drawDrone(G, e, x, y, flash); break;
       case 'elite': {
@@ -594,9 +777,9 @@ EJ.render = (() => {
     if (e.vuln > 0) reticle(x, y - (e.def.r > 0.5 ? 70 : 30), Math.floor(time * 10) % 2 ? '#ff2d55' : '#ffffff');
     const small = !['golem', 'hydra', 'ceo', 'head'].includes(e.type);
     if (small && e.hp < e.maxHp) {
-      const bw = e.type === 'elite' ? 18 : 12, bx = Math.round(x - bw / 2), by = Math.round(y - (e.def.fly ? 14 : e.type === 'bug' ? 10 : 28));
-      sc.fillStyle = '#0a0a10'; sc.fillRect(bx - 1, by - 1, bw + 2, 3);
-      sc.fillStyle = e.elite ? e.elite.color : '#ff2d55'; sc.fillRect(bx, by, Math.max(1, Math.round((bw * e.hp) / e.maxHp)), 1);
+      const bw = e.type === 'elite' ? 18 : 12, bx = x - bw / 2, by = y - (e.def.fly ? 14 : e.type === 'bug' ? 10 : 28);
+      sc.fillStyle = 'rgba(6,6,12,0.85)'; sc.fillRect(bx - 0.5, by - 0.5, bw + 1, 2);
+      sc.fillStyle = e.elite ? e.elite.color : '#ff2d55'; sc.fillRect(bx, by, Math.max(0.5, (bw * e.hp) / e.maxHp), 1);
     }
   }
 
@@ -784,6 +967,19 @@ EJ.render = (() => {
   function drawLights(G) {
     const P = G.player;
     if (P.alive) pushLight(P.x, P.y, 'rgba(79,233,255,0.22)', 2);
+    const pillarCol = EJ.assets.pillarColor(G);
+    for (const p of G.L.props) if (p.kind === 'pillar') {
+      pushLight(p.x + p.w / 2, p.y + p.d / 2 + .6, rgba(pillarCol, .4 * (1 - (G.blackout || 0) * .95)), p.lightR || 2.2);
+    }
+    sc.save(); sc.globalCompositeOperation = 'lighter';
+    for (const n of G.L.wallNeons || []) {
+      const strength = 1 - (G.blackout || 0) * .95;
+      pushLight(n.lightX, n.lightY, rgba(pillarCol, .45 * strength), 1.9);
+      const X = ox + n.reflectionX, Y = oy + n.reflectionY;
+      sc.fillStyle = rgba(pillarCol, .12 * strength); sc.fillRect(X - 1, Y + 1, 2, 18);
+      sc.fillStyle = rgba(pillarCol, .06 * strength); sc.fillRect(X - 2, Y + 1, 4, 26);
+    }
+    sc.restore();
     for (const l of G.lights) {
       const a = l.life / l.max;
       pushLight(l.x, l.y, l.color.replace(/[\d.]+\)$/, m => (parseFloat(m) * a).toFixed(3) + ')'), l.r);

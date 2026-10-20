@@ -90,21 +90,18 @@ EJ.box = (ctx, ox, oy, x, y, w, d, z, h, c) => {
   return { a, b, e, at, bt, et, ft };
 };
 
-// Iso ellipse on the ground plane (radius in tiles), drawn as crisp rows.
+// Iso ellipse on the ground plane (radius in tiles). Drawn as a vector path so it stays smooth on the
+// high-resolution scene; `ring` > 0 strokes an outline of that thickness instead of filling.
 EJ.groundEllipse = (ctx, cx, cy, r, color, ring = 0) => {
   const rx = r * 22.6, ry = r * 11.3;
-  ctx.fillStyle = color;
-  for (let y = -Math.ceil(ry); y <= Math.ceil(ry); y++) {
-    const t = 1 - (y * y) / (ry * ry);
-    if (t <= 0) continue;
-    const hw = rx * Math.sqrt(t);
-    if (ring > 0) {
-      const ir = 1 - (y * y) / ((ry - ring) * (ry - ring));
-      const ihw = ir > 0 ? (rx - ring * 2) * Math.sqrt(ir) : 0;
-      if (ihw <= 0) { ctx.fillRect(Math.round(cx - hw), Math.round(cy + y), Math.round(hw * 2), 1); continue; }
-      ctx.fillRect(Math.round(cx - hw), Math.round(cy + y), Math.round(hw - ihw) || 1, 1);
-      ctx.fillRect(Math.round(cx + ihw), Math.round(cy + y), Math.round(hw - ihw) || 1, 1);
-    } else ctx.fillRect(Math.round(cx - hw), Math.round(cy + y), Math.round(hw * 2), 1);
+  if (rx <= 0.5) return;
+  ctx.beginPath();
+  if (ring > 0) {
+    ctx.ellipse(cx, cy, Math.max(0.5, rx - ring / 2), Math.max(0.5, ry - ring / 2), 0, 0, Math.PI * 2);
+    ctx.strokeStyle = color; ctx.lineWidth = ring; ctx.stroke();
+  } else {
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill();
   }
 };
 

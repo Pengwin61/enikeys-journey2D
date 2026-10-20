@@ -16,21 +16,22 @@
   const G = (EJ.G = {
     state: 'title', floorIdx: 0, floor: EJ.FLOORS[0], day: 1, cycle: 0,
     L: null, player: null, enemies: [], bullets: [], particles: [], hazards: [], drops: [], lights: [], floaters: [], beams: [], waves: [], npcs: [],
-    tickets: [], selTicket: null, thread: null, threadT: 0,
+    tickets: [], selTicket: null,
     cam: { x: 0, y: 0 }, shake: 0, hitstop: 0, timeScale: 1, hurtFlash: 0, burnFlash: 0, flow: null, flowT: 0, flowTile: -1,
-    night: 0, nightTarget: 0, blackout: 0, prompt: null, nextId: 1, stats: null, cinematic: null, hud, badgeMap: true,
+    night: 0, nightTarget: 0, blackout: 0, prompt: null, nextId: 1, stats: null, cinematic: null, hud,
     debugGod: /[?&]god\b/.test(location.search),
     onLethal, onPassPicked, onEnemyKilled,
   });
-  let naxCounter = 60;
+  let ticketCounter = 60;
 
   // ================================================================ run / floor / day
   function newRun(skipIntro) {
     const meta = loadMeta();
     G.cycle = meta.ceos || 0;
-    G.player = null; G.day = 1; naxCounter = 60 + Math.floor(rand() * 5);
+    G.player = null; G.day = 1; ticketCounter = 60 + Math.floor(rand() * 5);
     G.stats = { kills: 0, tickets: 0, gold: 0, damageDealt: 0, damageTaken: 0, time: 0 };
     G.rootSaid = false; G.bossBeaten = false; G.pendingScene = null;
+    G.routinePending = false; G.routineShown = false;
     meta.runs = (meta.runs || 0) + 1; saveMeta(meta);
     const m = location.search.match(/[?&]floor=(\d)/);
     const startIdx = m ? Math.min(2, +m[1] - 1) : 0;
@@ -51,7 +52,7 @@
     // debug: jumping straight to a later floor gives a fitting build
     if (!G.stats.ready && i > 0) { const P = G.player; P.level = 1 + i * 3; P.hp.max = 30 + (P.level - 1) * 10; P.hp.cur = P.hp.max; P.skill = 2 + i * 3; }
     G.stats.ready = true;
-    Object.assign(G, { enemies: [], bullets: [], particles: [], hazards: [], drops: [], lights: [], floaters: [], beams: [], waves: [], npcs: [], tickets: [], allies: [], zaps: [], spinFx: null, slowT: 0, overtime: false, clock: 9 * 60, selTicket: null, thread: null, cinematic: null, night: 0, nightTarget: 0, blackout: 0, flow: null, flowTile: -1, shake: 0, hitstop: 0, timeScale: 1 });
+    Object.assign(G, { enemies: [], bullets: [], particles: [], hazards: [], drops: [], lights: [], floaters: [], beams: [], waves: [], npcs: [], tickets: [], allies: [], zaps: [], spinFx: null, slowT: 0, overtime: false, clock: 9 * 60, selTicket: null, cinematic: null, night: 0, nightTarget: 0, blackout: 0, flow: null, flowTile: -1, shake: 0, hitstop: 0, timeScale: 1 });
     G.floorStartDay = G.day;
     G.cam.x = EJ.isoX(G.player.x, G.player.y); G.cam.y = EJ.isoY(G.player.x, G.player.y);
 
@@ -59,11 +60,12 @@
     for (const R of L.rooms) if (R.type === 'boss') { R.sealed = true; sealRoom(R, true); }
     if (L.elevator) L.elevator.locked = G.floor.key !== 'penthouse';
     spawnNpcs();
+    placeSmartwatch();
     hud.floor(G);
 
     // elevator card
     $('fcEyebrow').textContent = i === 0 ? 'MONOLITH CORP' : 'ЛИФТ · ВВЕРХ';
-    $('fcTitle').textContent = `${G.floor.label} — ${G.floor.name}`;
+    $('fcTitle').textContent = `${G.floor.label}\n${G.floor.name}`;
     $('fcSub').textContent = i === 0 ? 'Ряд 7. Место 503. Оборудование: на месте. Ожидает оператора.' : i === 1 ? 'Разработка. Планёрка, с которой никто не уходит.' : 'Тронный зал. Компания всегда должна иметь CEO.';
     document.documentElement.style.setProperty('--fc', EJ.rgba(G.floor.accent, 0.6));
     $('floorCard').querySelector('.fc-bar').innerHTML = '<i></i>';
@@ -81,6 +83,21 @@
   }
 
   const xy = ([x, y]) => ({ x, y });
+  // the smart watch (unlocks the minimap) lies somewhere on the floor until the hero picks it up
+  function placeSmartwatch() {
+    const L = G.L, P = G.player;
+    if ('smartwatch' in P.inv) return;
+    const rooms = L.rooms.filter(R => ['office', 'print', 'meeting', 'server', 'kitchen'].includes(R.type));
+    rooms.sort((a, b) => EJ.dist(b.cx, b.cy, L.rooms[0].cx, L.rooms[0].cy) - EJ.dist(a.cx, a.cy, L.rooms[0].cx, L.rooms[0].cy));
+    const R = rooms[Math.floor(rand() * Math.min(3, rooms.length))];
+    if (!R) return;
+    for (let k = 0; k < 60; k++) {
+      const x = R.x + 1 + rand() * (R.w - 2), y = R.y + 1 + rand() * (R.h - 2);
+      if (EJ.level.solidAt(L, x, y, 0.3)) continue;
+      ent.dropItem(G, x, y, 'smartwatch', 0);
+      return;
+    }
+  }
   function spawnNpcs() {
     const L = G.L, start = L.rooms[0];
     // nearest free spot next to a desk/point: NPCs must never end up inside furniture or walls
@@ -111,15 +128,29 @@
   }
 
   // ---------------------------------------------------------------- tickets (storytelling/quest_generator.go)
-  const nax = () => `NAX-${naxCounter++}`;
+  const nextTicketId = () => `MON-${ticketCounter++}`;
   function startDay(first) {
     const L = G.L, P = G.player;
+    // Daily incidents are rebuilt below. No combat state or temporary door lock
+    // from the previous day may survive; progression seals stay in place.
+    for (const R of L.rooms) if (!R.sealed) {
+      R.active = false; R.boss = false; R.waves = []; R.waveDelay = 0;
+      lockRoom(R, false);
+    }
+    // Doors are shared by adjoining rooms: restore seals after all unlocks.
+    for (const R of L.rooms) if (R.sealed) sealRoom(R, true);
     G.dayStats = { tickets: 0, gold: P.gold, exp: 0, kills: G.stats.kills };
     G.night = 0; G.nightTarget = 0;
     // the working day runs on a clock: 09:00 → 18:00, then overtime until midnight
-    G.clock = 9 * 60; G.overtime = false; G.nightIncidentT = 25; G.campCourse = false; G.coffeeUsed = new Set();
-    const shopIds = EJ.rand.shuffle(Object.keys(EJ.ITEMS).filter(id => id !== 'black_hat' && !(id in P.inv))).slice(0, 2);
-    G.shop = shopIds.map(id => { const grade = EJ.rollGrade(P.luck); return { id, grade, price: [25, 45, 75, 120][grade] + G.floorIdx * 10, sold: false }; });
+    G.clock = 9 * 60; G.overtime = false; G.patrol = null; G.nightIncidentT = 25; G.campCourse = false; G.coffeeUsed = new Set();
+    if (L.rooms[0].secdoor) L.rooms[0].secdoor.openT = 0;
+    G.watchPatrolNear = false; G.watchAlertCooldown = 0;
+    const shopIds = EJ.rand.shuffle(Object.keys(EJ.ITEMS).filter(id => id !== 'black_hat' &&
+      (!(id in P.inv) || (id === 'smartwatch' && P.inv[id] < 3)))).slice(0, 2);
+    G.shop = shopIds.map(id => {
+      const grade = id === 'smartwatch' && id in P.inv ? Math.max(EJ.rollGrade(P.luck), P.inv[id] + 1) : EJ.rollGrade(P.luck);
+      return { id, grade, price: [25, 45, 75, 120][grade] + G.floorIdx * 10, sold: false };
+    });
     // incidents: two rooms get infested today
     for (const R of L.rooms) { if (['office', 'print', 'meeting', 'server', 'kitchen'].includes(R.type)) { R.incident = false; R.cleared = true; R.elite = null; } }
     const rooms = L.rooms.filter(R => ['office', 'print', 'meeting', 'server', 'kitchen'].includes(R.type));
@@ -133,10 +164,10 @@
     const floorDay = G.day - G.floorStartDay + 1;
     const eliteChance = Math.min(100, (floorDay >= 2 ? 100 : 0));
     if (rand() * 100 < eliteChance) addEliteTicket(0);
-    checkBossTicket();
+    checkBossTicket(true);
     G.selTicket = G.tickets.find(t => t.state !== 'done') || null;
     hud.objective(G.floor.key === 'helpdesk' ? 'Пережить испытательный срок' : 'Добраться до CEO');
-    hud.banner(`ДЕНЬ ${G.day}`, first && G.day === 1 ? 'Трекер: 3 новые таски. Неоновая нить ведёт к выбранной.' : `${G.floor.name} · новые таски в трекере`, G.floor.accent, 2.4);
+    hud.banner(`ДЕНЬ ${G.day}`, first && G.day === 1 ? 'Трекер: 3 новые таски. Найди нужные устройства на этаже.' : `${G.floor.name} · новые таски в трекере`, G.floor.accent, 2.4);
     if (first && G.day === 1 && G.floorIdx === 0) hud.toast('WASD — движение · ЛКМ — атака · E — работать над таской · Tab — сменить таску', 6);
     EJ.audio.setIntensity(0.15);
   }
@@ -152,7 +183,7 @@
       const far = opts.filter(p => L.rooms[p.room].type !== 'start');
       const pool = far.length ? far : opts;
       if (!pool.length) continue;
-      const t = { id: nax(), kind: 'normal', quest: q, title: q.name, text: q.text, target: pool[Math.floor(rand() * pool.length)], state: 'open', progress: 0 };
+      const t = { id: nextTicketId(), kind: 'normal', quest: q, title: q.name, text: q.text, target: pool[Math.floor(rand() * pool.length)], state: 'open', progress: 0 };
       // keep the tracker short: forget all but the two most recent finished tickets
       const done = G.tickets.filter(x => x.state === 'done' && x.kind === 'normal');
       for (const d of done.slice(0, Math.max(0, done.length - 2))) G.tickets.splice(G.tickets.indexOf(d), 1);
@@ -170,28 +201,44 @@
     const kind = EJ.rand.pick(Object.keys(EJ.ELITES));
     const E = EJ.ELITES[kind];
     R.elite = kind; R.incident = true; R.cleared = false;
-    const t = { id: nax(), kind: 'elite', title: E.name, sub: `${E.title} · награда: пропуск`, eliteKind: kind, room: R, target: { x: R.cx - 0.3, y: R.cy - 0.3, w: 0.6, d: 0.6, h: 24 }, state: 'open', progress: 0 };
+    const t = { id: nextTicketId(), kind: 'elite', title: E.name, sub: `${E.title} · награда: пропуск`, eliteKind: kind, room: R, target: { x: R.cx - 0.3, y: R.cy - 0.3, w: 0.6, d: 0.6, h: 24 }, state: 'open', progress: 0 };
     G.tickets.splice(slot, 0, t);
     if (G.tickets.length > 4) G.tickets.pop();
   }
 
-  function checkBossTicket() {
+  function checkBossTicket(newDay = false) {
     const P = G.player, F = G.floor, L = G.L;
     if (G.tickets.some(t => t.kind === 'boss') || G.bossBeaten) return;
     const floorDay = G.day - G.floorStartDay + 1;
     if (P.passes < F.passes || floorDay < 2) return;
     if (F.boss === 'golem') {
+      if (!G.routineShown) {
+        // Qualifying during a shift must not interrupt it. Arm the scene only
+        // when a new day starts; approaching Gregor will reveal the ticket.
+        if (newDay) G.routinePending = true;
+        return;
+      }
       const desk = L.rooms[0].desk503;
-      G.tickets.unshift({ id: 'NAX-58', kind: 'boss', title: 'Дежурство. Пятница. Ночь.', sub: 'Комментарий: «Показал себя хорошо».', target: desk, state: 'open', progress: 0, boss: 'golem' });
-      playScene('routine', () => {});
+      G.tickets.unshift({ id: 'MON-58', kind: 'boss', title: 'Дежурство. Пятница. Ночь.', sub: 'Комментарий: «Показал себя хорошо».', target: desk, state: 'open', progress: 0, boss: 'golem' });
     } else if (F.boss === 'hydra') {
       const R = L.rooms.find(r => r.type === 'boss');
       R.sealed = false; sealRoom(R, false);
-      G.tickets.unshift({ id: 'NAX-77', kind: 'boss', title: 'Планёрка у Team Lead', sub: 'Переговорная открыта. Подготовься.', target: { x: R.cx - 0.3, y: R.cy - 0.3, w: 0.6, d: 0.6, h: 30 }, room: R, state: 'open', progress: 0, boss: 'hydra' });
+      G.tickets.unshift({ id: 'MON-77', kind: 'boss', title: 'Планёрка у Team Lead', sub: 'Переговорная открыта. Подготовься.', target: { x: R.cx - 0.3, y: R.cy - 0.3, w: 0.6, d: 0.6, h: 30 }, room: R, state: 'open', progress: 0, boss: 'hydra' });
       hud.banner('ПЕРЕГОВОРНАЯ ОТКРЫТА', 'Team Lead-гидра ждёт на планёрке', '#ff3df0', 2.6);
       sfx('unlock');
     }
     G.selTicket = G.tickets[0];
+  }
+  function updateRoutineScene() {
+    if (!G.routinePending || G.routineShown || G.state !== 'play' || G.floor.boss !== 'golem') return;
+    const P = G.player;
+    if (!P.alive || P.workT > 0 || G.day <= G.floorStartDay || P.passes < G.floor.passes || G.bossBeaten) return;
+    if (G.enemies.length || G.pendingScene || G.L.rooms.some(r => r.active)) return;
+    const gregor = G.npcs.find(n => n.kind === 'gregor' && n.visible !== false);
+    if (!gregor || dist(P.x, P.y, gregor.x, gregor.y) > 1.7) return;
+    G.routinePending = false; G.routineShown = true;
+    checkBossTicket();
+    playScene('routine', () => {});
   }
   function onPassPicked() {
     const t = G.tickets.find(x => x.kind === 'elite' && x.state === 'awaitPass');
@@ -208,7 +255,7 @@
     const L = G.L;
     for (const R of L.rooms) if (R.type === 'hall') { R.incident = true; R.cleared = false; }
     const T = L.rooms.find(r => r.type === 'throne');
-    G.tickets = [{ id: 'NAX-∞', kind: 'boss', title: 'Финальный босс: CEO', sub: 'Тронный зал пентхауса. Здесь заканчивается всё.', target: T.throne, state: 'open', progress: 0, boss: 'ceo', room: T }];
+    G.tickets = [{ id: 'MON-∞', kind: 'boss', title: 'Финальный босс: CEO', sub: 'Тронный зал пентхауса. Здесь заканчивается всё.', target: T.throne, state: 'open', progress: 0, boss: 'ceo', room: T }];
     G.selTicket = G.tickets[0];
     hud.objective('Найти и убить CEO');
     playScene('penthouse', () => {});
@@ -281,7 +328,7 @@
       ent.dropPass(G, e.x, e.y);
       for (let i = 0; i < 6; i++) ent.dropCoin(G, e.x, e.y, 2 + G.floorIdx);
       // one random canon item with its normal drop odds boosted for an elite
-      const ids = Object.keys(EJ.ITEMS).filter(id => id !== 'black_hat');
+      const ids = Object.keys(EJ.ITEMS).filter(id => id !== 'black_hat' && id !== 'smartwatch');
       const id = ids[Math.floor(rand() * ids.length)];
       if (rand() < 0.6) ent.dropItem(G, e.x, e.y, id, EJ.rollGrade(G.player.luck, 10));
       hud.banner('ЭЛИТА ПОВЕРЖЕНА', `${e.elite.name} · подбери пропуск`, '#b26bff', 2);
@@ -325,7 +372,7 @@
     sfx('alarm');
   }
   function startDuty() {
-    // NAX-58: night falls over ряд 7, the golem walks out of the dark
+    // MON-58: night falls over ряд 7, the golem walks out of the dark
     playScene('duty', () => {
       const L = G.L, R = L.rooms[0], P = G.player;
       G.nightTarget = 1;
@@ -365,7 +412,7 @@
     P.bossesDefeated++; P.passes = 0; // canon: «Сжигаются накопленные пропуски»
     G.bossBeaten = true;
     for (let i = 0; i < 16; i++) ent.dropCoin(G, e.x + (rand() - 0.5) * 2, e.y + (rand() - 0.5) * 2, 3);
-    const ids = Object.keys(EJ.ITEMS).filter(id => id !== 'black_hat' && EJ.ITEMS[id].type === 'P');
+    const ids = Object.keys(EJ.ITEMS).filter(id => id !== 'black_hat' && id !== 'smartwatch' && EJ.ITEMS[id].type === 'P');
     ent.dropItem(G, e.x, e.y, ids[Math.floor(rand() * ids.length)], EJ.rollGrade(P.luck, 25));
     const t = G.tickets.find(x => x.kind === 'boss'); if (t) t.state = 'done';
     G.stats.tickets++;
@@ -376,7 +423,7 @@
       G.L.elevator.locked = false;
       const erika = G.npcs.find(n => n.kind === 'erika');
       if (erika) erika.visible = true;
-      G.tickets.push({ id: nax(), kind: 'boss', title: 'Лифт ждёт', sub: 'Эрика у лифта. Следующий этаж.', target: G.L.elevator, state: 'open', progress: 0, lift: true });
+      G.tickets.push({ id: nextTicketId(), kind: 'boss', title: 'Лифт ждёт', sub: 'Эрика у лифта. Следующий этаж.', target: G.L.elevator, state: 'open', progress: 0, lift: true });
       G.selTicket = G.tickets[G.tickets.length - 1];
       hud.banner('ЛИФТ РАЗБЛОКИРОВАН', 'Эрика ждёт у лифта', '#4dff9a', 2.6);
     };
@@ -403,7 +450,10 @@
   }
 
   // ================================================================ interaction (E)
-  function frontOf(p) { return [p.x + p.w / 2, p.y + p.d + 0.45]; }
+  function frontOf(p) {
+    if (p.kind === 'secdoor' && p.wallSide === 'w') return [p.x + p.w + 0.45, p.y + p.d / 2];
+    return [p.x + p.w / 2, p.y + p.d + 0.45];
+  }
   function updateInteract(dt) {
     const L = G.L, P = G.player, inp = EJ.input;
     G.prompt = null;
@@ -438,7 +488,7 @@
       }
       if (t.boss === 'golem') {
         const [fx, fy] = frontOf(t.target);
-        near.push([dist(P.x, P.y, fx, fy) - 0.2, { text: 'NAX-58 · Заступить на ночное дежурство', x: fx, y: fy, z: 50, act: () => { t.state = 'active'; startDuty(); } }]);
+        near.push([dist(P.x, P.y, fx, fy) - 0.2, { text: 'MON-58 · Заступить на ночное дежурство', x: fx, y: fy, z: 50, act: () => { t.state = 'active'; startDuty(); } }]);
       }
       if (t.lift) {
         const [fx, fy] = frontOf(t.target);
@@ -447,7 +497,7 @@
     }
     // ряд 7 is the camp: seat 503 ends the day, HR grants vacation, EDU sells courses, IT-шкаф sells loot
     const R0 = L.rooms[0];
-    const calm = !G.enemies.length && !G.pendingScene && !L.rooms.some(r => r.active);
+    const calm = !G.enemies.some(e => !e.patrol) && !G.pendingScene && !L.rooms.some(r => r.active);
     if (R0.desk503 && G.floor.key !== 'penthouse' && calm) {
       const [fx, fy] = frontOf(R0.desk503);
       near.push([dist(P.x, P.y, fx, fy) + 0.25, { text: 'Место 503 · закончить день и отдохнуть (энергия, −15 выгорания)', x: fx, y: fy - 0.3, z: 36, act: () => endDay(false) }]);
@@ -467,7 +517,7 @@
       if (it.sold) return;
       const sx0 = R0.shelf.x + 0.4 + i * 0.8, sy0 = R0.shelf.y + R0.shelf.d + 0.45;
       const I = EJ.ITEMS[it.id], g = EJ.GRADES[it.grade];
-      near.push([dist(P.x, P.y, sx0, sy0), { text: `IT-шкаф · ${I.name} (${g.name}) — ${it.price} ◆${I.mod ? ' · ' + I.mod : ''}`, x: sx0, y: sy0 - 0.4, z: 40, bad: P.gold < it.price, act: () => {
+      near.push([dist(P.x, P.y, sx0, sy0), { text: `IT-шкаф\n${I.name} — ${it.price} ◆`, color: g.color, x: sx0, y: sy0 - 0.4, z: 40, bad: P.gold < it.price, act: () => {
         if (P.gold < it.price) { sfx('deny'); hud.toast('Не хватает золота.', 1.6); return; }
         P.gold -= it.price; it.sold = true; const got = ent.giveItem(G, it.id, it.grade); hud.loot(it.id, it.grade, got); sfx('pickup');
       } }]);
@@ -518,7 +568,8 @@
   function completeTicket(t) {
     const P = G.player, q0 = t.quest;
     // overtime: +50% gold and exp, double burnout (IDEAS.md «Овертайм»)
-    const q = G.overtime ? { ...q0, gold: Math.round(q0.gold * 1.5), exp: Math.round(q0.exp * 1.5), burnout: q0.burnout * 2 } : q0;
+    const mul = G.patrol ? 2 : 1.5;
+    const q = G.overtime ? { ...q0, gold: Math.round(q0.gold * mul), exp: Math.round(q0.exp * mul), burnout: q0.burnout * 2 } : q0;
     P.workT = 0; t.state = 'done'; t.progress = 1;
     G.stats.tickets++; G.dayStats.tickets++;
     if (q.gold) { P.gold += q.gold; G.stats.gold += q.gold; }
@@ -616,7 +667,7 @@
   EJ.workMinutes = workMinutes; EJ.fmtDur = fmtDur;
   function endDay(vacation, forced) {
     if (G.state !== 'play') return;
-    if (G.enemies.length && !forced) { hud.toast('Нельзя закрыть день посреди инцидента.', 2); sfx('deny'); return; }
+    if (G.enemies.some(e => !e.patrol) && !forced) { hud.toast('Нельзя закрыть день посреди инцидента.', 2); sfx('deny'); return; }
     const P = G.player, ds = G.dayStats;
     if (vacation) {
       // GoVacation: 50 gold, energy full, burnout −50
@@ -626,8 +677,11 @@
     }
     P.workT = 0;
     G.state = 'intro';
-    G.enemies = []; G.bullets = []; G.hazards = [];
-    for (const R of G.L.rooms) if (R.active) { R.active = false; lockRoom(R, false); }
+    G.enemies = []; G.bullets = []; G.hazards = []; G.beams = []; G.waves = [];
+    for (const R of G.L.rooms) if (R.active) {
+      R.active = false; R.boss = false; R.waves = []; R.waveDelay = 0;
+      lockRoom(R, false);
+    }
     sfx('heal');
     $('fcEyebrow').textContent = `ВЕЧЕР · ДЕНЬ ${G.day}${G.overtime ? ' · ОВЕРТАЙМ' : ''}`;
     $('fcTitle').textContent = forced ? 'Охрана выключила свет' : vacation ? 'Отпуск' : 'Отдых';
@@ -655,9 +709,9 @@
       hud.banner('18:00 · ОВЕРТАЙМ', 'Свет гаснет через одну. Награды ×1.5, выгорание ×2. Закрыть день — место 503', '#ffb03a', 3.5);
       sfx('alarm');
     }
-    if (G.clock >= G.nextTicketAt && G.clock < 18 * 60) {
-      G.nextTicketAt = G.clock + 60 + rand() * 40;
-      if (G.tickets.filter(t => t.kind === 'normal' && t.state === 'open').length < 4) {
+    if (G.clock >= G.nextTicketAt && (G.clock < 18 * 60 || G.patrol)) {
+      G.nextTicketAt = G.clock + (G.patrol ? 30 + rand() * 20 : 60 + rand() * 40);
+      if (G.tickets.filter(t => t.kind === 'normal' && t.state === 'open').length < (G.patrol ? 6 : 4)) {
         const t = addNormalTicket();
         if (t) { hud.toast(`📨 Новая таска ${t.id}: «${t.title}» · ⏱ ${fmtDur(workMinutes(t.quest))}`, 3); sfx('ui'); if (!G.selTicket || G.selTicket.state !== 'open') G.selTicket = t; }
       }
@@ -667,7 +721,43 @@
       const rooms = G.L.rooms.filter(r => ['office', 'print', 'meeting', 'server', 'kitchen'].includes(r.type) && r.cleared && !r.active);
       if (rooms.length) { const R = rooms[Math.floor(rand() * rooms.length)]; R.incident = true; R.cleared = false; hud.alert('НОЧНОЙ ИНЦИДЕНТ'); }
     }
-    if (G.clock >= 24 * 60 && G.state === 'play') endDay(false, true);
+    if (!G.patrol && G.clock >= 24 * 60) startPatrol();
+    if (G.patrol) updatePatrol(dt);
+    if (G.clock >= 29 * 60 && G.state === 'play') { hud.banner('05:00 · ОХРАНА ВЫСТАВИЛА ЗА ДВЕРЬ', 'Выгорание +20', '#ff2d55', 3); ent.addBurnout(G, 20); if (G.state === 'play' && G.player.alive) endDay(false, true); }
+  }
+
+  // 00:00 — night patrol: the security door opens, guards hunt the hero across the floor,
+  // tickets pour in and pay double; the night ends at seat 503 (or 05:00, when security throws you out)
+  function startPatrol() {
+    const door = G.L.rooms[0].secdoor;
+    G.patrol = { t: 3, wave: 0, door };
+    G.nightTarget = Math.max(G.nightTarget, 0.7);
+    G.nextTicketAt = G.clock + 5;
+    hud.banner('00:00 · НОЧНОЙ ОБХОД', 'Охрана вышла на этаж. Таски ×2, но охрана сильнее и ищет тебя. Уйти — место 503', '#ff2d55', 4);
+    hud.alert('ДВЕРЬ ОХРАНЫ ОТКРЫТА'); sfx('alarm'); sfx('lock');
+    EJ.audio.setIntensity(1);
+  }
+  function updatePatrol(dt) {
+    const pt = G.patrol, door = pt.door;
+    if (!door || G.state !== 'play') return;
+    door.openT = Math.max(0, (door.openT || 0) - dt);
+    if ((pt.t -= dt) > 0) return;
+    const alive = G.enemies.filter(e => e.patrol).length;
+    const cap = 2 + Math.min(4, pt.wave);
+    pt.t = Math.max(6, 14 - pt.wave * 1.5);
+    if (alive >= cap) return;
+    pt.wave++;
+    const [fx, fy] = frontOf(door);
+    const n = Math.min(cap - alive, 1 + (pt.wave > 3 ? 1 : 0));
+    for (let i = 0; i < n; i++) {
+      const type = G.floorIdx >= 1 && rand() < 0.35 ? 'drone' : 'guard';
+      const west = door.wallSide === 'w';
+      const spread = (rand() - 0.5) * 0.8, forward = 0.2 + i * 0.4;
+      const e = ent.makeEnemy(G, type, fx + (west ? forward : spread), fy + (west ? spread : forward), { room: null, extra: { patrol: true } });
+      e.hp = e.maxHp = Math.round(e.maxHp * (1.4 + 0.1 * pt.wave)); e.dmgMul *= 1.3 + 0.05 * pt.wave; e.speed *= 1.15;
+    }
+    door.openT = 1.2;
+    hud.alert(pt.wave === 1 ? 'ОХРАНА ВЫШЛА НА ОБХОД' : 'ПОДКРЕПЛЕНИЕ ОХРАНЫ'); sfx('spawn');
   }
 
   function nextFloor() {
@@ -742,10 +832,13 @@
       ent.updateParticles(G, dt);
     } else {
       G.uiBlock = false;
-      if (inp.hit('Tab')) { const open = G.tickets.filter(t => t.state === 'open'); if (open.length) { G.selTicket = open[(open.indexOf(G.selTicket) + 1) % open.length]; G.threadT = 0; sfx('ui'); } }
+      if (inp.hit('Tab')) { const open = G.tickets.filter(t => t.state === 'open'); if (open.length) { G.selTicket = open[(open.indexOf(G.selTicket) + 1) % open.length]; sfx('ui'); } }
       ent.updatePlayer(G, dt);
       ent.updateAllies(G, dt);
       updateClock(dt);
+      // Midnight can call endDay(), clear enemies and change the screen. Stop
+      // this frame before updateRooms() can restart combat and relock its doors.
+      if (G.state !== 'play') return;
       const tile = Math.floor(P.x) + Math.floor(P.y) * L.w;
       G.flowT -= dt;
       if (tile !== G.flowTile || G.flowT <= 0) { G.flow = EJ.level.flowField(L, P.x, P.y); G.flowTile = tile; G.flowT = 0.4; }
@@ -754,16 +847,10 @@
       ent.updateBullets(G, dt);
       ent.updateHazards(G, dt);
       ent.updateDrops(G, dt);
+      if (P.alive) EJ.watch.updateAlerts(G, dt);
       ent.updateParticles(G, dt);
       for (const n of G.npcs) n.say = Math.max(0, (n.say || 0) - dt);
-      if (P.alive) { updateRooms(dt); updateInteract(dt); updatePendingScene(dt); }
-      // neon thread to the selected ticket
-      if ((G.threadT -= dt) <= 0) {
-        G.threadT = 0.3;
-        const t = G.selTicket;
-        if (t && t.state === 'open' && t.target) { const [fx, fy] = frontOf(t.target); G.thread = EJ.level.path(L, P.x, P.y, fx, fy); G.threadColor = t.kind === 'elite' ? '#b26bff' : t.kind === 'boss' ? '#ff2d55' : '#3fd8ff'; }
-        else G.thread = null;
-      }
+      if (P.alive) { updateRooms(dt); updateInteract(dt); updatePendingScene(dt); updateRoutineScene(); }
       
     }
     let tx = EJ.isoX(P.x, P.y), ty = EJ.isoY(P.x, P.y) - 10;
@@ -797,7 +884,7 @@
     else if (G.state === 'inventory') { if (inp.hit('KeyI', 'Escape', 'Tab')) openInventory(false); }
     else if (G.state === 'scene') updateScene(realDt);
     else if (G.state === 'buffer') { for (let i = 0; i < 3; i++) if (inp.hit('Digit' + (i + 1)) && G.bufferOpts[i]) { G.bufferOpts[i](); break; } }
-    else if (G.state === 'title') { for (const [k, a] of [['Digit1', 'start'], ['Digit2', 'ignore'], ['Digit3', 'reply'], ['Digit4', 'skip'], ['Enter', 'start']]) if (inp.hit(k)) { titleAct(a); break; } }
+    else if (G.state === 'title') titleKeys(inp);
     else if ((G.state === 'over' || G.state === 'ending') && inp.hit('Enter')) restart();
     if (G.L) { G.shake = Math.max(0, G.shake - realDt * 28); G.hurtFlash = Math.max(0, G.hurtFlash - realDt * 3); G.burnFlash = Math.max(0, (G.burnFlash || 0) - realDt * 2.5); }
     if (inp.hit('KeyM')) toggleSound();
@@ -825,14 +912,40 @@
   }
 
   // ================================================================ title
-  const MAIL = {
-    ignore: 'Три удара. Ровных, громких. Они постучат снова. Они всегда стучат снова.',
-    reply: 'Ответ не доставлен: «Отправитель не найден». Через секунду — новое письмо: «Отказ не предусмотрен».',
-  };
+  // main menu: a neon column under the logo; the 04:04 mail pops up as a notification
+  const MENUS = ['menuMain', 'menuSettings', 'menuControls'];
+  let menuSel = 0, mailTimer = null;
+  const menuItems = () => [...document.querySelectorAll(`#${MENUS.find(m => !$(m).hidden)} .tm-item`)];
+  function menuFocus(i) {
+    const it = menuItems(); if (!it.length) return;
+    menuSel = (i + it.length) % it.length;
+    it.forEach((b, k) => b.classList.toggle('sel', k === menuSel));
+  }
+  function showMenu(id) { for (const m of MENUS) $(m).hidden = m !== id; menuFocus(0); }
+  function refreshSettings() {
+    const N = { painted: 'детальная', pixel: 'пиксельная' };
+    $('tmSound').textContent = `Звук: ${EJ.audio.muted ? 'выкл' : 'вкл'}`;
+  }
   function titleAct(a) {
     EJ.audio.init(); sfx('ui');
-    if (a === 'start' || a === 'skip') { hud.screen('title', false); EJ.audio.startMusic('explore'); newRun(a === 'skip'); return; }
-    $('mailLine').textContent = MAIL[a];
+    if (a === 'new' || a === 'skip') { clearTimeout(mailTimer); $('mailToast').hidden = true; hud.screen('title', false); EJ.audio.startMusic('explore'); newRun(a === 'skip'); return; }
+    if (a === 'settings') { refreshSettings(); showMenu('menuSettings'); }
+    if (a === 'controls') showMenu('menuControls');
+    if (a === 'back') showMenu('menuMain');
+    if (a === 'sound') { toggleSound(); refreshSettings(); }
+    if (a === 'style') { const S = EJ.assets.STYLES; EJ.assets.setStyle(S[(S.indexOf(EJ.assets.style) + 1) % S.length]); }
+  }
+  function titleKeys(inp) {
+    if (inp.hit('ArrowDown', 'KeyS')) { menuFocus(menuSel + 1); sfx('step'); }
+    if (inp.hit('ArrowUp', 'KeyW')) { menuFocus(menuSel - 1); sfx('step'); }
+    if (inp.hit('Enter', 'Space')) { const b = menuItems()[menuSel]; if (b) titleAct(b.dataset.menu); }
+    if (inp.hit('Escape', 'Backspace')) titleAct('back');
+  }
+  function showTitle() {
+    showMenu('menuMain');
+    $('mailToast').hidden = true; $('mailBody').hidden = true;
+    clearTimeout(mailTimer);
+    mailTimer = setTimeout(() => { if (G.state === 'title') { $('mailToast').hidden = false; EJ.audio.play('ui'); } }, 2500);
   }
   function restart() { for (const s of ['over', 'ending']) hud.screen(s, false); hud.show(false); newRun(true); }
   function toMenu() {
@@ -842,6 +955,7 @@
     showPrevCeo();
     $('mailLine').textContent = '«Кандидат Эникей. Ваше место за вами. Буквально — оно прикручено к полу.»';
     hud.screen('title', true);
+    showTitle();
     document.body.classList.add('menu');
   }
   function showPrevCeo() {
@@ -855,7 +969,12 @@
     EJ.render.init($('game'));
     hud.init();
     showPrevCeo();
-    document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => titleAct(b.dataset.act)));
+    document.querySelectorAll('[data-menu]').forEach(b => {
+      b.addEventListener('click', () => { b.blur(); titleAct(b.dataset.menu); });
+      b.addEventListener('mouseenter', () => { const i = menuItems().indexOf(b); if (i >= 0 && i !== menuSel) { menuFocus(i); } });
+    });
+    $('mailToggle').onclick = () => { $('mailToggle').blur(); $('mailBody').hidden = !$('mailBody').hidden; $('mailToast').classList.toggle('open', !$('mailBody').hidden); sfx('ui'); };
+    showTitle();
     $('resumeBtn').onclick = () => pause(false);
     $('quitBtn').onclick = toMenu;
     $('retryBtn').onclick = restart;
